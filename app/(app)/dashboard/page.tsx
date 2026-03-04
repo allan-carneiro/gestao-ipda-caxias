@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useRouter, usePathname } from "next/navigation"; // ✅ pathname
+import { useRouter, usePathname } from "next/navigation";
 import { PUBLIC_ENV } from "@/src/lib/publicEnv";
 
 import { doc, getDoc } from "firebase/firestore";
@@ -28,7 +28,13 @@ import {
   type CeiaFaltanteRecorrenteListItem,
 } from "@/src/lib/dashboard";
 
-import { normalizeText, onlyDigits } from "@/src/lib/membroSearch";
+import {
+  normalizeText,
+  onlyDigits,
+  scoreNomePorRelevancia,
+} from "@/src/lib/membroSearch";
+
+import { calcularIdade } from "@/src/lib/idade";
 
 // ✅ Recharts
 import {
@@ -137,57 +143,6 @@ function formatMesKeyToPtBRShort(mesKey: string): string {
   return `${mm[2]}/${mm[1]}`;
 }
 
-/* ============================
-   ✅ IDADE (runtime, sem salvar)
-============================ */
-
-function parseDataNascimento(raw: string): Date | null {
-  const s = raw.trim();
-  if (!s) return null;
-
-  // yyyy-mm-dd ou yyyy/mm/dd
-  let m = s.match(/^(\d{4})[-/](\d{2})[-/](\d{2})$/);
-  if (m) {
-    const yy = Number(m[1]);
-    const mm = Number(m[2]);
-    const dd = Number(m[3]);
-    if (!yy || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-    return new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0));
-  }
-
-  // dd/mm/aaaa
-  m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m) {
-    const dd = Number(m[1]);
-    const mm = Number(m[2]);
-    const yy = Number(m[3]);
-    if (!yy || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-    return new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0));
-  }
-
-  return null;
-}
-
-function calcularIdade(dataNascimento?: string | null): number | null {
-  const raw = String(dataNascimento ?? "").trim();
-  if (!raw) return null;
-
-  const d = parseDataNascimento(raw);
-  if (!d) return null;
-
-  const hoje = new Date();
-  const hojeUTC = new Date(
-    Date.UTC(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 12, 0, 0)
-  );
-
-  let idade = hojeUTC.getUTCFullYear() - d.getUTCFullYear();
-  const m = hojeUTC.getUTCMonth() - d.getUTCMonth();
-  if (m < 0 || (m === 0 && hojeUTC.getUTCDate() < d.getUTCDate())) idade--;
-
-  if (!Number.isFinite(idade) || idade < 0 || idade > 130) return null;
-  return idade;
-}
-
 type ModalKind = "membros" | "ceiaMes" | "ceiaAno" | "ceiaRecorrentes";
 type MembrosTab = "Ativo" | "Inativo";
 
@@ -259,7 +214,6 @@ type ListItemBase = {
   id: string;
   nome: string;
   dataNascimento?: string | null;
-  // opcional: se sua lib/dashboard já devolve cpf, vamos aproveitar
   cpf?: string | null;
 };
 
@@ -305,36 +259,47 @@ function ListBox<T extends ListItemBase>(props: {
 
     const termText = normalizeText(raw);
 
-    return items.filter((x) => {
-      const nome = normalizeText(x.nome || "");
-      const cpfDigits = onlyDigits((x as any).cpf ?? "");
+    // 1) Só números: CPF/idade
+    if (isOnlyDigits) {
+      return items.filter((x) => {
+        const cpfDigits = onlyDigits((x as any).cpf ?? "");
+        const idade = showAge ? calcularIdade(x.dataNascimento ?? null) : null;
 
-      const idade = showAge ? calcularIdade(x.dataNascimento ?? null) : null;
-
-      // 1) Se digitou só números: idade/CPF
-      if (isOnlyDigits) {
-        // CPF (11 dígitos): permite parcial usando startsWith
+        // CPF (11 dígitos)
         if (digits.length === 11) {
           return cpfDigits.startsWith(digits);
         }
 
-        // Idade (1–3 dígitos)
+        // Idade (1–3 dígitos) -> exato
         if (digits.length >= 1 && digits.length <= 3) {
           if (idade == null) return false;
 
           const n = Number(digits);
           if (!Number.isFinite(n) || n <= 0) return false;
 
-          // ✅ regra NOVA: sempre exato
-return idade === n;
+          return idade === n;
         }
 
-        // Outros números: tenta CPF contém (se existir)
+        // Outros números: tenta CPF contém
         return cpfDigits.includes(digits);
-      }
+      });
+    }
 
-      // 2) Texto: nome
+    // 2) Texto: filtra + ordena por relevância
+    const base = items.filter((x) => {
+      const nome = normalizeText(x.nome || "");
       return nome.includes(termText);
+    });
+
+    return [...base].sort((a, b) => {
+      const sa = scoreNomePorRelevancia(a.nome, raw);
+      const sb = scoreNomePorRelevancia(b.nome, raw);
+
+      if (sa !== sb) return sa - sb;
+
+      return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR", {
+        sensitivity: "base",
+      });
     });
   }, [items, search, showAge]);
 
@@ -818,13 +783,10 @@ export default function DashboardPage() {
   const [loadingStats, setLoadingStats] = useState(false);
   const [erroStats, setErroStats] = useState<string | null>(null);
 
-  // ✅ Série Ceia (12 meses)
   type SerieCeiaItem = { id: string; label: string; presentes: number };
   const [serieCeia, setSerieCeia] = useState<SerieCeiaItem[]>([]);
   const [loadingSerieCeia, setLoadingSerieCeia] = useState(false);
   const [erroSerieCeia, setErroSerieCeia] = useState<string | null>(null);
-
-  // ✅ força remount do chart quando recarregar
   const [serieCeiaKey, setSerieCeiaKey] = useState(0);
 
   const [ceiaMesRef, setCeiaMesRef] = useState<{
@@ -841,11 +803,13 @@ export default function DashboardPage() {
   const [erroModal, setErroModal] = useState<string | null>(null);
 
   const [membrosAtivos, setMembrosAtivos] = useState<SimpleMembroListItem[]>([]);
-  const [membrosInativos, setMembrosInativos] =
-    useState<SimpleMembroListItem[]>([]);
+  const [membrosInativos, setMembrosInativos] = useState<SimpleMembroListItem[]>(
+    []
+  );
   const [presentesMes, setPresentesMes] = useState<SimpleMembroListItem[]>([]);
-  const [participantesAno, setParticipantesAno] =
-    useState<SimpleMembroListItem[]>([]);
+  const [participantesAno, setParticipantesAno] = useState<SimpleMembroListItem[]>(
+    []
+  );
 
   const [faltantesRecorrentes, setFaltantesRecorrentes] = useState<
     CeiaFaltanteRecorrenteListItem[]
@@ -863,10 +827,10 @@ export default function DashboardPage() {
       const [membros, ceiaMes, ceiaAno, ceiaRecorrentes, serie] =
         await Promise.all([
           getStatsMembros(),
-          getStatsCeiaMes(anoAtual, mesAtual), // ✅ sem parâmetro extra
+          getStatsCeiaMes(anoAtual, mesAtual),
           getStatsCeiaAno(anoAtual),
           getStatsCeiaFaltantesRecorrentes(),
-          getSerieCeiaUltimosMeses(anoAtual, mesAtual), // ✅ agora usa HISTÓRICO
+          getSerieCeiaUltimosMeses(anoAtual, mesAtual),
         ]);
 
       setStats({
@@ -1223,9 +1187,12 @@ export default function DashboardPage() {
               stats={stats}
               onClick={() => openMembros("Ativo")}
             />
-            <ChartCeia loading={loadingStats} stats={stats} onClick={openCeiaMes} />
+            <ChartCeia
+              loading={loadingStats}
+              stats={stats}
+              onClick={openCeiaMes}
+            />
 
-            {/* ✅ key força remount quando série atualiza */}
             <div key={serieCeiaKey}>
               <ChartCeiaLine
                 loading={loadingSerieCeia}
@@ -1338,13 +1305,13 @@ export default function DashboardPage() {
             search={search}
             onSearch={setSearch}
             emptyLabel="Nenhum faltante recorrente encontrado."
-            onOpenMember={(id) => {
-              void openMember(id);
-            }}
+            onOpenMember={(id) => void openMember(id)}
             onEditMember={editMember}
             getBadgeLabel={(m) => {
               const seq = Array.isArray(m.ceiaFaltasSeq) ? m.ceiaFaltasSeq : [];
-              const last = seq.length ? String(seq[seq.length - 1] ?? "").trim() : "";
+              const last = seq.length
+                ? String(seq[seq.length - 1] ?? "").trim()
+                : "";
               const lastLabel = last ? formatMesKeyToPtBRShort(last) : "";
               return lastLabel ? `Recorrente • ${lastLabel}` : "Recorrente";
             }}
@@ -1353,7 +1320,9 @@ export default function DashboardPage() {
             showAge={true}
             getMetaText={(m) => {
               const label = String(m.ceiaFaltasSeqLabel ?? "").trim();
-              const seqLen = Array.isArray(m.ceiaFaltasSeq) ? m.ceiaFaltasSeq.length : 0;
+              const seqLen = Array.isArray(m.ceiaFaltasSeq)
+                ? m.ceiaFaltasSeq.length
+                : 0;
               const count = seqLen > 0 ? seqLen : m.faltasSeguidasCeia;
 
               return (
@@ -1406,9 +1375,7 @@ export default function DashboardPage() {
                 ? "Ninguém marcado como presente neste mês."
                 : "Nenhum participante encontrado neste ano."
             }
-            onOpenMember={(id) => {
-              void openMember(id);
-            }}
+            onOpenMember={(id) => void openMember(id)}
             onEditMember={editMember}
             badgeLabel={
               modalKind === "membros"

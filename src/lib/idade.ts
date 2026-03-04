@@ -1,4 +1,5 @@
 // src/lib/idade.ts
+
 export function parseBRDateToISO(br?: string | null) {
   // aceita "DD/MM/AAAA" e devolve "AAAA-MM-DD" (string) ou null
   const s = String(br ?? "").trim();
@@ -7,6 +8,10 @@ export function parseBRDateToISO(br?: string | null) {
   if (!m) return null;
   const [, dd, mm, yyyy] = m;
   return `${yyyy}-${mm}-${dd}`;
+}
+
+export function isValidDate(d: Date) {
+  return d instanceof Date && !Number.isNaN(d.getTime());
 }
 
 export function parseISOToDate(iso?: string | null) {
@@ -32,10 +37,6 @@ export function parseISOToDate(iso?: string | null) {
   return isValidDate(d) ? d : null;
 }
 
-export function isValidDate(d: Date) {
-  return d instanceof Date && !Number.isNaN(d.getTime());
-}
-
 export function calcularIdade(dataNascimento?: string | null, now = new Date()) {
   const d = parseISOToDate(dataNascimento);
   if (!d) return null;
@@ -52,6 +53,7 @@ export function calcularIdade(dataNascimento?: string | null, now = new Date()) 
 }
 
 export function formatarIdade(idade: number | null) {
-  if (idade === null) return "—";
-  return `${idade} anos`;
+  // ✅ melhor pra UI: string vazia quando não tem idade
+  if (idade == null) return "";
+  return `${idade} ano${idade === 1 ? "" : "s"}`;
 }
