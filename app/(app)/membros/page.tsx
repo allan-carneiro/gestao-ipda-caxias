@@ -114,6 +114,28 @@ function formatarIdade(idade: number | null) {
 }
 
 /* ============================
+   SCORE de busca por nome (para ordenar)
+============================ */
+function scoreNomeMatch(nomeOriginal: string, termo: string) {
+  const nome = normalizeText(nomeOriginal);
+  const q = normalizeText(termo);
+
+  if (!q) return 0;
+
+  const words = nome.split(/\s+/).filter(Boolean);
+
+  // prioridade:
+  // 300 -> começa com "jose"
+  // 200 -> tem palavra "jose" em qualquer posição
+  // 100 -> contém "jose" em substring
+  if (words[0] === q) return 300;
+  if (words.includes(q)) return 200;
+  if (nome.includes(q)) return 100;
+
+  return 0;
+}
+
+/* ============================
    MODAL (mesmo padrão do [id]/page.tsx)
 ============================ */
 function Modal({
@@ -279,17 +301,21 @@ export default function MembrosPage() {
     });
   }, [membros]);
 
-  // ✅ Busca “inteligente”
+  // ✅ Busca “inteligente” + ordenação por relevância quando for texto (nome)
   const membrosFiltrados = useMemo(() => {
     const raw = busca.trim();
+
+    // sempre aplica cargo/status
+    const baseFiltrada = membrosComIdade.filter((m: any) => {
+      const cargo = (m.cargoEclesiastico || "").trim();
+      const status = statusSeguro(m.status);
+      const okCargo = !filtroCargo || cargo === filtroCargo;
+      const okStatus = !filtroStatus || status === filtroStatus;
+      return okCargo && okStatus;
+    });
+
     if (!raw) {
-      return membrosComIdade.filter((m: any) => {
-        const cargo = (m.cargoEclesiastico || "").trim();
-        const status = statusSeguro(m.status);
-        const okCargo = !filtroCargo || cargo === filtroCargo;
-        const okStatus = !filtroStatus || status === filtroStatus;
-        return okCargo && okStatus;
-      });
+      return baseFiltrada;
     }
 
     const digits = onlyDigits(raw);
@@ -298,62 +324,74 @@ export default function MembrosPage() {
     // normalizações úteis
     const termText = normalizeText(raw);
 
-    return membrosComIdade.filter((m: any) => {
-      const cargo = (m.cargoEclesiastico || "").trim();
-      const status = statusSeguro(m.status);
+    // 1) Se digitou SÓ números: mantém sua lógica atual
+    if (isOnlyDigits) {
+      return baseFiltrada.filter((m: any) => {
+        const telDigits = onlyDigits(m.telefoneCelular || m.telefone || "");
+        const nrDigits = onlyDigits(String(m.numeroRol ?? ""));
+        const telCartaDigits = onlyDigits(m.telCarta ?? "");
+        const cpfDigits = onlyDigits(m.cpf ?? "");
+        const idade: number | null = m._idade ?? null;
 
-      const okCargo = !filtroCargo || cargo === filtroCargo;
-      const okStatus = !filtroStatus || status === filtroStatus;
-      if (!okCargo || !okStatus) return false;
-
-      const nome = normalizeText(m.nomeCompleto || m.nome || "");
-
-      const telDigits = onlyDigits(m.telefoneCelular || m.telefone || "");
-      const nrDigits = onlyDigits(String(m.numeroRol ?? ""));
-      const telCartaDigits = onlyDigits(m.telCarta ?? "");
-      const cpfDigits = onlyDigits(m.cpf ?? "");
-
-      const idade: number | null = m._idade ?? null;
-
-      // 1) Se digitou SÓ números:
-      if (isOnlyDigits) {
         // CPF (11 dígitos) -> começa com (permite buscar parcial)
         if (digits.length === 11) {
           return cpfDigits.startsWith(digits);
         }
 
-        // IDADE (1–3 dígitos)
+        // IDADE (1–3 dígitos) -> exato
         if (digits.length >= 1 && digits.length <= 3) {
           if (idade == null) return false;
 
           const n = Number(digits);
           if (!Number.isFinite(n) || n <= 0) return false;
 
-          // ✅ regra NOVA: sempre exato
-return idade === n;
+          return idade === n;
         }
 
-        // números longos (ex.: telefone/rol) -> busca por dígitos nesses campos
+        // números longos -> busca por dígitos
         return (
           telDigits.includes(digits) ||
           nrDigits.includes(digits) ||
           telCartaDigits.includes(digits) ||
           cpfDigits.includes(digits)
         );
-      }
+      });
+    }
 
-      // 2) Texto: busca por nome e campos textuais (sem misturar com idade/telefone)
+    // 2) Texto: filtra por nome e campos textuais
+    const filtrados = baseFiltrada.filter((m: any) => {
+      const nomeNorm = normalizeText(m.nomeCompleto || m.nome || "");
+
       const ipda = normalizeText(m.ipdaPastor ?? "");
       const nrTxt = normalizeText(String(m.numeroRol ?? ""));
       const tcTxt = normalizeText(m.telCarta ?? "");
 
       return (
-        nome.includes(termText) ||
+        nomeNorm.includes(termText) ||
         ipda.includes(termText) ||
         nrTxt.includes(termText) ||
         tcTxt.includes(termText)
       );
     });
+
+    // 3) Texto: ordena por relevância (nome começa com termo, etc.)
+    filtrados.sort((a: any, b: any) => {
+      const nomeAOriginal = a.nomeCompleto || a.nome || "";
+      const nomeBOriginal = b.nomeCompleto || b.nome || "";
+
+      const sA = scoreNomeMatch(nomeAOriginal, raw);
+      const sB = scoreNomeMatch(nomeBOriginal, raw);
+
+      if (sA !== sB) return sB - sA;
+
+      // desempate: A→Z (sem acento)
+      return normalizeText(nomeAOriginal).localeCompare(
+        normalizeText(nomeBOriginal),
+        "pt-BR"
+      );
+    });
+
+    return filtrados;
   }, [membrosComIdade, busca, filtroCargo, filtroStatus]);
 
   // ✅ Contagens consistentes com o Dashboard: total = ativos + inativos
