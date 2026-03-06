@@ -15,7 +15,7 @@ import {
 
 import {
   marcarPresencaNoControle,
-  listarControleCeia, // ✅ usa a mesma regra do ceia.ts
+  listarControleCeia,
   listarRegistroCeia,
   registrarCeiaNoMes,
   removerRegistroCeiaNoMes,
@@ -31,6 +31,11 @@ type MembroListaItem = {
   congregacao?: string | null;
   pastor?: string | null;
   telCarta?: string | null;
+
+  // ✅ novos campos para busca inteligente
+  cpf?: string | null;
+  telefone?: string | null;
+  dataNascimento?: string | null;
 };
 
 function agoraAnoMes() {
@@ -83,13 +88,57 @@ function formatIpdaPastor(congregacao?: string | null, pastor?: string | null) {
   return c || p || "";
 }
 
+function normalizarTexto(valor: unknown) {
+  return String(valor ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function soDigitos(valor: unknown) {
+  return String(valor ?? "").replace(/\D/g, "");
+}
+
+function calcularIdade(dataNascimento?: string | null) {
+  const s = String(dataNascimento ?? "").trim();
+  if (!s) return null;
+
+  const partesIso = s.split("-");
+  if (partesIso.length !== 3) return null;
+
+  const ano = Number(partesIso[0]);
+  const mes = Number(partesIso[1]);
+  const dia = Number(partesIso[2]);
+
+  if (!ano || !mes || !dia) return null;
+
+  const nasc = new Date(ano, mes - 1, dia);
+  if (Number.isNaN(nasc.getTime())) return null;
+
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - ano;
+
+  const aindaNaoFezAniversario =
+    hoje.getMonth() < mes - 1 ||
+    (hoje.getMonth() === mes - 1 && hoje.getDate() < dia);
+
+  if (aindaNaoFezAniversario) idade -= 1;
+
+  if (idade < 0 || idade > 130) return null;
+
+  return idade;
+}
+
 // ✅ blindagem: garante que nunca passa lixo como id
 function assertMembroId(membroId: unknown) {
-  if (typeof membroId !== "string") throw new Error("membroId inválido (não é string).");
+  if (typeof membroId !== "string")
+    throw new Error("membroId inválido (não é string).");
   const s = membroId.trim();
   if (!s) throw new Error("membroId inválido (vazio).");
   if (s.includes("/")) throw new Error("membroId inválido (contém '/').");
-  if (s === "[object Object]" || s.includes("[object")) throw new Error("membroId inválido (objeto convertido).");
+  if (s === "[object Object]" || s.includes("[object"))
+    throw new Error("membroId inválido (objeto convertido).");
   return s;
 }
 
@@ -109,6 +158,9 @@ export default function SantaCeiaPage() {
   const [registro, setRegistro] = useState<{ membroId: string; nome: string }[]>(
     []
   );
+
+  // ✅ novo estado da busca
+  const [busca, setBusca] = useState("");
 
   const [loadingMembros, setLoadingMembros] = useState(true);
   const [loadingAba, setLoadingAba] = useState(true);
@@ -206,6 +258,11 @@ export default function SantaCeiaPage() {
             congregacao: data.congregacao ?? null,
             pastor: data.pastor ?? null,
             telCarta: data.telCarta ?? null,
+
+            // ✅ campos usados na busca
+            cpf: data.cpf ?? null,
+            telefone: data.telefoneCelular ?? data.telefone ?? null,
+            dataNascimento: data.dataNascimento ?? null,
           };
         });
 
@@ -213,7 +270,9 @@ export default function SantaCeiaPage() {
           const na = a.numeroRol ?? 999999999;
           const nb = b.numeroRol ?? 999999999;
           if (na !== nb) return na - nb;
-          return a.nome.localeCompare(b.nome);
+          return a.nome.localeCompare(b.nome, "pt-BR", {
+            sensitivity: "base",
+          });
         });
 
         setMembros(list);
@@ -292,6 +351,40 @@ export default function SantaCeiaPage() {
     baixandoRegistro;
 
   // =========================
+  // ✅ busca inteligente client-side
+  // =========================
+  const membrosFiltrados = useMemo(() => {
+    const termo = busca.trim();
+
+    if (!termo) return membros;
+
+    const termoNormalizado = normalizarTexto(termo);
+    const termoDigitos = soDigitos(termo);
+
+    return membros.filter((m) => {
+      const nomeNormalizado = normalizarTexto(m.nome);
+      const cpfDigitos = soDigitos(m.cpf);
+      const telefoneDigitos = soDigitos(m.telefone || m.telCarta);
+      const idade = calcularIdade(m.dataNascimento);
+      const idadeTexto = idade != null ? String(idade) : "";
+
+      const bateNome =
+        termoNormalizado.length > 0 && nomeNormalizado.includes(termoNormalizado);
+
+      const bateCpf =
+        termoDigitos.length > 0 && cpfDigitos.includes(termoDigitos);
+
+      const bateTelefone =
+        termoDigitos.length > 0 && telefoneDigitos.includes(termoDigitos);
+
+      const bateIdade =
+        termoDigitos.length > 0 && idadeTexto === termoDigitos;
+
+      return bateNome || bateCpf || bateTelefone || bateIdade;
+    });
+  }, [busca, membros]);
+
+  // =========================
   // Ações: marcar/desmarcar
   // =========================
   async function toggleControle(membroIdRaw: string) {
@@ -305,7 +398,6 @@ export default function SantaCeiaPage() {
       return;
     }
 
-    // ✅ anti corrida por membro
     if (togglingControleRef.current.has(membroId)) return;
     togglingControleRef.current.add(membroId);
 
@@ -313,7 +405,6 @@ export default function SantaCeiaPage() {
     const ja = controleSet.has(membroId);
     const prevControle = controle;
 
-    // UI otimista
     setControle((prev) => {
       const map = new Map(prev.map((p: any) => [p.membroId, p]));
       const atual = map.get(membroId) ?? { membroId, nome, presente: false };
@@ -325,8 +416,6 @@ export default function SantaCeiaPage() {
 
     try {
       await marcarPresencaNoControle(ano, mes, membroId, nome, !ja);
-
-      // ✅ estado final vem do Firestore (fonte da verdade)
       await carregarControleDoMes();
 
       toast.success(
@@ -499,7 +588,9 @@ export default function SantaCeiaPage() {
     if (isBusy) return;
 
     const ok = confirm(
-      `Finalizar a Santa Ceia de ${nomeMes(mes)} (${pad2(mes)}/${ano})?\n\nIsso vai copiar os marcados do Controle para o Registro do mês.`
+      `Finalizar a Santa Ceia de ${nomeMes(mes)} (${pad2(
+        mes
+      )}/${ano})?\n\nIsso vai copiar os marcados do Controle para o Registro do mês.`
     );
     if (!ok) return;
 
@@ -508,7 +599,9 @@ export default function SantaCeiaPage() {
       fn: async () => {
         const res = await finalizarCeiaDoMes(ano, mes);
 
-        toast.success(`Finalizado! ${res.total} pessoa(s) registradas no histórico.`);
+        toast.success(
+          `Finalizado! ${res.total} pessoa(s) registradas no histórico.`
+        );
 
         setAba("registro");
         await recarregarAbaAtual();
@@ -536,7 +629,6 @@ export default function SantaCeiaPage() {
         const res = await desmarcarTodosNoControle(ano, mes);
         toast.success(`Ok! ${res.total} presença(s) removida(s) no Controle.`);
 
-        // ✅ garante que a tela reflita imediatamente
         await carregarControleDoMes();
       },
       errorFallback: "Erro ao desmarcar todos.",
@@ -582,7 +674,6 @@ export default function SantaCeiaPage() {
           `Sincronização concluída! marcados=${r.marcados} ignorados=${r.ignorados}`
         );
 
-        // ✅ não depende de recarregarAbaAtual pra refletir controle
         await carregarControleDoMes();
       },
       errorFallback: "Erro ao sincronizar Controle do Sheets.",
@@ -686,8 +777,26 @@ export default function SantaCeiaPage() {
                 no Firestore.
               </p>
 
+              <div className="mt-4">
+                <label className="text-sm text-gray-600">
+                  Buscar por nome, idade, telefone ou CPF
+                </label>
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Ex.: José, 65, 21987654321, 12345678900"
+                  className="w-full mt-1 border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
+                  disabled={loadingMembros || loadingAba}
+                />
+                <div className="mt-2 text-sm text-gray-600">
+                  Mostrando <strong>{membrosFiltrados.length}</strong> de{" "}
+                  <strong>{membros.length}</strong> membro(s).
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 mt-4">
-                {membros.map((m) => {
+                {membrosFiltrados.map((m) => {
                   const marcado =
                     aba === "controle"
                       ? controleSet.has(m.id)
@@ -724,6 +833,12 @@ export default function SantaCeiaPage() {
                   );
                 })}
               </div>
+
+              {membrosFiltrados.length === 0 && (
+                <div className="mt-4 rounded-xl border border-dashed p-4 text-sm text-gray-600">
+                  Nenhum membro encontrado para essa busca.
+                </div>
+              )}
 
               <div className="mt-4 text-sm text-gray-700">
                 <strong>Total marcado no mês:</strong>{" "}
