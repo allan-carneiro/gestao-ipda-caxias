@@ -15,6 +15,10 @@ const ITEMS: Item[] = [
   { href: "/dashboard", label: "Dashboard", icon: "🏠" },
   { href: "/membros", label: "Membros", icon: "👥" },
   { href: "/membros/novo", label: "Novo membro", icon: "➕" },
+
+  // ⭐ NOVO MÓDULO
+  { href: "/evangelismo", label: "Evangelismo", icon: "📖" },
+
   { href: "/relatorios", label: "Relatórios", icon: "📊" },
 ];
 
