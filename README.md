@@ -1,36 +1,139 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Gestão IPDA – Caxias
 
-## Getting Started
+Sistema SaaS para gestão administrativa de igrejas desenvolvido com **Next.js, Firebase e TypeScript**.
 
-First, run the development server:
+Este projeto foi desenvolvido como parte do meu **portfólio enquanto estudo Análise e Desenvolvimento de Sistemas**.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+# 🚀 Funcionalidades
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 👤 Gestão de Membros
+- Cadastro completo de membros
+- Edição e atualização de dados
+- Inativação e reativação de membros
+- Upload de foto
+- Cálculo automático de idade
+- Busca inteligente por nome, CPF ou idade
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🍞 Controle da Santa Ceia
+- Marcação de presença no mês
+- Registro histórico anual
+- Estatísticas mensais e anuais
+- Identificação de faltantes recorrentes
 
-## Learn More
+## 📊 Dashboard Administrativo
+- Estatísticas de membros
+- Estatísticas da Santa Ceia
+- Gráficos interativos
+- Atividade recente do sistema
 
-To learn more about Next.js, take a look at the following resources:
+## 📝 Sistema de Auditoria
+O sistema registra automaticamente ações administrativas como:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Marcar presença na Santa Ceia
+- Desmarcar presença
+- Criar membro
+- Editar membro
+- Inativar membro
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Essas ações são exibidas no dashboard como **atividade recente**, permitindo rastreabilidade das operações.
 
-## Deploy on Vercel
+## 📄 Exportação de Relatórios
+- Exportação para Excel (XLSX)
+- Relatório do dia da Ceia
+- Registro anual de participantes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# 🧱 Tecnologias Utilizadas
+
+### Frontend
+- Next.js
+- React
+- TypeScript
+
+### Estilização
+- TailwindCSS
+
+### Backend / Banco de dados
+- Firebase Firestore
+
+### Autenticação
+- Firebase Auth
+
+### Armazenamento de imagens
+- Cloudinary
+
+### Gráficos
+- Recharts
+
+### Hospedagem
+- Vercel
+
+### Controle de versão
+- Git + GitHub
+
+---
+
+# 🔐 Sistema de Permissões
+
+O sistema possui controle de acesso baseado em roles:
+
+- **admin** → acesso total
+- **secretaria** → gestão administrativa
+- **lider** → controle da Santa Ceia
+- **consulta** → acesso apenas para leitura
+
+As permissões são implementadas utilizando **Firebase Custom Claims**.
+
+---
+
+# 📊 Dashboard
+
+O painel principal apresenta:
+
+- Estatísticas de membros
+- Estatísticas da Santa Ceia
+- Gráficos interativos
+- Lista de atividades recentes
+- Acesso rápido às principais rotinas
+
+---
+
+# 🌐 Deploy
+
+O sistema está hospedado na **Vercel**.
+
+---
+
+# 🎯 Objetivo do Projeto
+
+Este sistema foi desenvolvido como projeto de portfólio para demonstrar habilidades em:
+
+- desenvolvimento fullstack
+- arquitetura de aplicações web
+- integração com Firebase
+- design de sistemas administrativos
+- implementação de dashboards e relatórios
+
+---
+
+# 👨‍💻 Autor
+
+**Allan Carneiro**
+
+Estudante de **Análise e Desenvolvimento de Sistemas**  
+Desenvolvedor em formação
+
+---
+
+# 📌 Status do Projeto
+
+🚧 Em evolução contínua.
+
+Próximas melhorias planejadas:
+
+- timeline visual de atividades
+- melhorias no sistema de auditoria
+- novos relatórios administrativos
