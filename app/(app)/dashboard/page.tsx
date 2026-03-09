@@ -11,7 +11,16 @@ import {
 import { useRouter, usePathname } from "next/navigation";
 import { PUBLIC_ENV } from "@/src/lib/publicEnv";
 
-import { doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  Timestamp,
+} from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 
 import {
@@ -113,6 +122,18 @@ type DashboardStats = {
   mes: number;
 };
 
+type RecentActivityItem = {
+  id: string;
+  action: string;
+  entity: string;
+  entityId?: string | null;
+  entityLabel?: string | null;
+  userEmail?: string | null;
+  userDisplayName?: string | null;
+  occurredAtIso?: string | null;
+  createdAt?: Timestamp | null;
+};
+
 function agoraAnoMes() {
   const d = new Date();
   return { ano: d.getFullYear(), mes: d.getMonth() + 1 };
@@ -141,6 +162,66 @@ function formatMesKeyToPtBRShort(mesKey: string): string {
     .match(/^(\d{4})-(\d{2})$/);
   if (!mm) return "";
   return `${mm[2]}/${mm[1]}`;
+}
+
+function formatRecentActivityText(item: RecentActivityItem) {
+  const actor =
+    String(item.userDisplayName ?? "").trim() ||
+    String(item.userEmail ?? "").trim() ||
+    "Usuário";
+
+  const action = String(item.action ?? "").trim() || "realizou uma ação";
+  const entity = String(item.entity ?? "").trim();
+  const label = String(item.entityLabel ?? "").trim();
+
+  const actionMap: Record<string, string> = {
+    marcar_presenca_ceia: "marcou presença na Ceia",
+    criar_membro: "criou membro",
+    editar_membro: "editou membro",
+    inativar_membro: "inativou membro",
+    reativar_membro: "reativou membro",
+    excluir_membro: "excluiu membro",
+    registrar_evangelismo: "registrou evangelismo",
+  };
+
+  const entityMap: Record<string, string> = {
+    membro: "membro",
+    ceia: "Ceia",
+    evangelismo: "evangelismo",
+  };
+
+  const actionLabel = actionMap[action] ?? action.replaceAll("_", " ");
+  const entityLabel = entityMap[entity] ?? entity;
+
+  if (label) {
+    return `${actor} ${actionLabel} — ${label}`;
+  }
+
+  if (entityLabel) {
+    return `${actor} ${actionLabel} — ${entityLabel}`;
+  }
+
+  return `${actor} ${actionLabel}`;
+}
+
+function formatRecentActivityDate(item: RecentActivityItem) {
+  const fromTimestamp =
+    item.createdAt && typeof item.createdAt.toDate === "function"
+      ? item.createdAt.toDate()
+      : null;
+
+  const fromIso = item.occurredAtIso ? new Date(item.occurredAtIso) : null;
+
+  const date =
+    fromTimestamp ??
+    (fromIso && !Number.isNaN(fromIso.getTime()) ? fromIso : null);
+
+  if (!date) return "";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
 }
 
 type ModalKind = "membros" | "ceiaMes" | "ceiaAno" | "ceiaRecorrentes";
@@ -789,6 +870,10 @@ export default function DashboardPage() {
   const [erroSerieCeia, setErroSerieCeia] = useState<string | null>(null);
   const [serieCeiaKey, setSerieCeiaKey] = useState(0);
 
+  const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>([]);
+  const [loadingRecentActivity, setLoadingRecentActivity] = useState(false);
+  const [erroRecentActivity, setErroRecentActivity] = useState<string | null>(null);
+
   const [ceiaMesRef, setCeiaMesRef] = useState<{
     ano: number;
     mes: number;
@@ -816,6 +901,58 @@ export default function DashboardPage() {
   >([]);
   const [search, setSearch] = useState("");
 
+  const fetchRecentActivity = useCallback(async (): Promise<
+    RecentActivityItem[]
+  > => {
+    const q = query(
+      collection(db, "auditoria"),
+      orderBy("createdAt", "desc"),
+      limit(10)
+    );
+
+    const snap = await getDocs(q);
+
+    return snap.docs.map((d) => {
+      const data = d.data() as Record<string, any>;
+
+      return {
+        id: d.id,
+        action: String(data.action ?? ""),
+        entity: String(data.entity ?? ""),
+        entityId: data.entityId ? String(data.entityId) : null,
+        entityLabel: data.entityLabel ? String(data.entityLabel) : null,
+        userEmail: data.userEmail ? String(data.userEmail) : null,
+        userDisplayName: data.userDisplayName
+          ? String(data.userDisplayName)
+          : null,
+        occurredAtIso: data.occurredAtIso ? String(data.occurredAtIso) : null,
+        createdAt: data.createdAt instanceof Timestamp ? data.createdAt : null,
+      };
+    });
+  }, []);
+
+  const loadRecentActivity = useCallback(async () => {
+    try {
+      setLoadingRecentActivity(true);
+      setErroRecentActivity(null);
+
+      const items = await fetchRecentActivity();
+      setRecentActivity(items);
+    } catch (e: unknown) {
+      console.error(e);
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as any).message)
+          : "";
+
+      setErroRecentActivity(
+        msg ? `Erro: ${msg}` : "Erro ao carregar atividade recente."
+      );
+    } finally {
+      setLoadingRecentActivity(false);
+    }
+  }, [fetchRecentActivity]);
+
   const loadDashboard = useCallback(async () => {
     try {
       setLoadingStats(true);
@@ -824,13 +961,17 @@ export default function DashboardPage() {
       setLoadingSerieCeia(true);
       setErroSerieCeia(null);
 
-      const [membros, ceiaMes, ceiaAno, ceiaRecorrentes, serie] =
+      setLoadingRecentActivity(true);
+      setErroRecentActivity(null);
+
+      const [membros, ceiaMes, ceiaAno, ceiaRecorrentes, serie, recent] =
         await Promise.all([
           getStatsMembros(),
           getStatsCeiaMes(anoAtual, mesAtual),
           getStatsCeiaAno(anoAtual),
           getStatsCeiaFaltantesRecorrentes(),
           getSerieCeiaUltimosMeses(anoAtual, mesAtual),
+          fetchRecentActivity(),
         ]);
 
       setStats({
@@ -852,6 +993,7 @@ export default function DashboardPage() {
 
       setSerieCeia(safeSerie);
       setSerieCeiaKey((k) => k + 1);
+      setRecentActivity(Array.isArray(recent) ? recent : []);
     } catch (e: unknown) {
       console.error(e);
       const msg =
@@ -864,11 +1006,15 @@ export default function DashboardPage() {
       setErroSerieCeia(
         msg ? `Erro: ${msg}` : "Erro ao carregar série (12 meses)."
       );
+      setErroRecentActivity(
+        msg ? `Erro: ${msg}` : "Erro ao carregar atividade recente."
+      );
     } finally {
       setLoadingStats(false);
       setLoadingSerieCeia(false);
+      setLoadingRecentActivity(false);
     }
-  }, [anoAtual, mesAtual]);
+  }, [anoAtual, mesAtual, fetchRecentActivity]);
 
   useEffect(() => {
     void loadDashboard();
@@ -1235,6 +1381,59 @@ export default function DashboardPage() {
             Links do Sheets não configurados. Você pode usar as planilhas internas do sistema.
           </p>
         )}
+      </div>
+
+      <div className="bg-white/90 backdrop-blur border border-white/40 p-5 rounded-2xl shadow">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-gray-900 font-semibold">Atividade recente</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Últimas ações registradas no sistema.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void loadRecentActivity()}
+            className="px-3 py-2 rounded-xl bg-white border text-sm font-semibold hover:bg-gray-50"
+          >
+            Atualizar
+          </button>
+        </div>
+
+        <div className="mt-4">
+          {erroRecentActivity ? (
+            <div className="rounded-2xl bg-red-50 border border-red-200 p-4 text-red-700">
+              {erroRecentActivity}
+            </div>
+          ) : loadingRecentActivity ? (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="p-3 rounded-xl border bg-gray-50 animate-pulse">
+                  <div className="h-4 w-3/4 bg-gray-200 rounded" />
+                  <div className="h-3 w-32 bg-gray-100 rounded mt-2" />
+                </div>
+              ))}
+            </div>
+          ) : recentActivity.length === 0 ? (
+            <div className="rounded-2xl border p-4 text-gray-600">
+              Nenhuma atividade recente encontrada.
+            </div>
+          ) : (
+            <ul className="divide-y rounded-2xl border overflow-hidden">
+              {recentActivity.map((item) => (
+                <li key={item.id} className="p-4 bg-white">
+                  <div className="text-sm font-medium text-gray-900">
+                    {formatRecentActivityText(item)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {formatRecentActivityDate(item)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
