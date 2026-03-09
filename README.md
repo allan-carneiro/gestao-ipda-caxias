@@ -14,7 +14,7 @@ https://gestao-ipda-caxias.vercel.app
 Você pode acessar o sistema usando:
 
 Email: demo@gestao-ipda.com
-Senha: GestaoDemo2026
+Senha: GestaoDemo2026!
 
 Este projeto foi desenvolvido como parte do meu **portfólio enquanto estudo Análise e Desenvolvimento de Sistemas**.
 
