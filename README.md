@@ -9,6 +9,12 @@ Sistema SaaS para gestão administrativa de igrejas desenvolvido com **Next.js, 
 
 🚀 **Demo do sistema:**  
 https://gestao-ipda-caxias.vercel.app
+## 🔐 Conta de demonstração
+
+Você pode acessar o sistema usando:
+
+Email: demo@gestao-ipda.com
+Senha: GestaoDemo2026
 
 Este projeto foi desenvolvido como parte do meu **portfólio enquanto estudo Análise e Desenvolvimento de Sistemas**.
 
