@@ -4,6 +4,23 @@ Sistema SaaS para gestão administrativa de igrejas desenvolvido com **Next.js, 
 
 Este projeto foi desenvolvido como parte do meu **portfólio enquanto estudo Análise e Desenvolvimento de Sistemas**.
 
+## 📸 Screenshots do Sistema
+
+### 🔐 Tela de Login
+![Login](login.png)
+
+### 📊 Dashboard
+![Dashboard](dashboard.png)
+
+### 👥 Gestão de Membros
+![Membros](membros.png)
+
+### 🍞 Controle de Santa Ceia
+![Santa Ceia](santa-ceia.png)
+
+### 📋 Formulário Externo
+![Formulário](formulario-externo.png)
+
 ---
 
 # 🚀 Funcionalidades
@@ -104,6 +121,9 @@ O painel principal apresenta:
 # 🌐 Deploy
 
 O sistema está hospedado na **Vercel**.
+
+🔗 Acesse o sistema:  
+https://gestao-ipda-caxias.vercel.app
 
 ---
 
