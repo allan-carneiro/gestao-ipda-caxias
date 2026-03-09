@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { addDoc, collection } from "firebase/firestore";
-import { db } from "@/src/lib/firebase";
+import { db, writeAuditLog } from "@/src/lib/firebase";
 import AuthGuard from "@/app/components/AuthGuard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -154,6 +154,27 @@ function calcularIdade(dataNasc?: string | null) {
 function formatarIdade(idade: number | null) {
   if (idade === null) return "";
   return `${idade} ano${idade === 1 ? "" : "s"}`;
+}
+
+function buildMembroAuditSnapshot(payload: Partial<Membro>) {
+  return {
+    nomeCompleto: payload.nomeCompleto ?? null,
+    status: payload.status ?? null,
+    cpf: payload.cpf ?? null,
+    telefoneCelular: payload.telefoneCelular ?? null,
+    email: payload.email ?? null,
+    dataNascimento: payload.dataNascimento ?? null,
+    congregacao: payload.congregacao ?? null,
+    pastor: payload.pastor ?? null,
+    campo: payload.campo ?? null,
+    cargoEclesiastico: payload.cargoEclesiastico ?? null,
+    numeroRol: payload.numeroRol ?? null,
+    telCarta: payload.telCarta ?? null,
+    fotoUrl: payload.fotoUrl ?? null,
+    endereco: payload.endereco ?? null,
+    updatedAt: payload.updatedAt ?? null,
+    createdAt: payload.createdAt ?? null,
+  };
 }
 
 export default function NovoMembroPage() {
@@ -577,6 +598,18 @@ export default function NovoMembroPage() {
         };
 
         const ref = await addDoc(collection(db, "membros"), payloadSeguro as any);
+
+        await writeAuditLog({
+          action: "create",
+          entity: "membro",
+          entityId: ref.id,
+          entityLabel: payloadSeguro.nomeCompleto ?? "(Sem nome)",
+          details: "Cadastro de membro criado.",
+          after: buildMembroAuditSnapshot(payloadSeguro),
+          metadata: {
+            origem: "app/membros/novo",
+          },
+        });
 
         // ✅ navegação após salvar
         toastOk("Membro cadastrado com sucesso! Abrindo ficha…");

@@ -14,7 +14,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { db } from "@/src/lib/firebase";
+import { db, writeAuditLog } from "@/src/lib/firebase";
 import AuthGuard from "@/app/components/AuthGuard";
 
 type Status = "Ativo" | "Inativo";
@@ -53,6 +53,8 @@ type Membro = {
   };
 
   observacoes?: string | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
 };
 
 function isStatusValido(v: any): v is Status {
@@ -177,6 +179,27 @@ function calcularIdade(dataNasc?: string | null) {
 function formatarIdade(idade: number | null) {
   if (idade === null) return "";
   return `${idade} ano${idade === 1 ? "" : "s"}`;
+}
+
+function buildMembroAuditSnapshot(payload: Partial<Membro>) {
+  return {
+    nomeCompleto: payload.nomeCompleto ?? payload.nome ?? null,
+    status: payload.status ?? null,
+    cpf: payload.cpf ?? null,
+    telefoneCelular: payload.telefoneCelular ?? payload.telefone ?? null,
+    email: payload.email ?? null,
+    dataNascimento: payload.dataNascimento ?? null,
+    dataBatismo: payload.dataBatismo ?? null,
+    campo: payload.campo ?? null,
+    congregacao: payload.congregacao ?? null,
+    pastor: payload.pastor ?? null,
+    cargoEclesiastico: payload.cargoEclesiastico ?? null,
+    fotoUrl: payload.fotoUrl ?? null,
+    endereco: payload.endereco ?? null,
+    observacoes: payload.observacoes ?? null,
+    updatedAt: payload.updatedAt ?? null,
+    createdAt: payload.createdAt ?? null,
+  };
 }
 
 /* ============================
@@ -347,7 +370,7 @@ export default function VerMembroPage() {
   }
 
   async function setStatus(novo: Status) {
-    if (!memberId) return;
+    if (!memberId || !membro) return;
 
     try {
       setActionLoading(true);
@@ -355,13 +378,36 @@ export default function VerMembroPage() {
       setSucesso(null);
 
       const now = new Date().toISOString();
+      const beforeSnapshot = buildMembroAuditSnapshot(membro);
+      const afterSnapshot = buildMembroAuditSnapshot({
+        ...membro,
+        status: novo,
+        updatedAt: now,
+      });
 
       await updateDoc(doc(db, "membros", memberId), {
         status: novo,
         updatedAt: now,
       } as any);
 
-      setMembro((prev) => ({ ...(prev || {}), status: novo }));
+      setMembro((prev) => ({ ...(prev || {}), status: novo, updatedAt: now }));
+
+      await writeAuditLog({
+        action: novo === "Inativo" ? "inactivate" : "activate",
+        entity: "membro",
+        entityId: memberId,
+        entityLabel: nome,
+        details:
+          novo === "Inativo"
+            ? "Membro inativado manualmente."
+            : "Membro ativado manualmente.",
+        before: beforeSnapshot,
+        after: afterSnapshot,
+        metadata: {
+          origem: "app/membros/[id]",
+        },
+      });
+
       setSucesso(
         novo === "Inativo"
           ? "Membro inativado com sucesso."
@@ -389,7 +435,7 @@ export default function VerMembroPage() {
   }
 
   async function excluirDefinitivo() {
-    if (!memberId) return;
+    if (!memberId || !membro) return;
 
     try {
       setActionLoading(true);
@@ -405,7 +451,22 @@ export default function VerMembroPage() {
         return;
       }
 
+      const beforeSnapshot = buildMembroAuditSnapshot(membro);
+
       await deleteDoc(doc(db, "membros", memberId));
+
+      await writeAuditLog({
+        action: "delete",
+        entity: "membro",
+        entityId: memberId,
+        entityLabel: nome,
+        details: "Membro excluído definitivamente.",
+        before: beforeSnapshot,
+        metadata: {
+          origem: "app/membros/[id]",
+        },
+      });
+
       closeModal();
       router.push("/membros");
     } catch (e: any) {

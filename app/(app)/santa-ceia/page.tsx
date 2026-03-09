@@ -4,7 +4,7 @@ import { exportExcel } from "@/src/lib/exportExcel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { collection, getDocs } from "firebase/firestore";
-import { db } from "@/src/lib/firebase";
+import { db, writeAuditLog } from "@/src/lib/firebase";
 import AuthGuard from "@/app/components/AuthGuard";
 import { useToast } from "@/app/components/ToastProvider";
 
@@ -155,9 +155,7 @@ export default function SantaCeiaPage() {
   const [controle, setControle] = useState<
     { membroId: string; nome: string; presente: boolean }[]
   >([]);
-  const [registro, setRegistro] = useState<{ membroId: string; nome: string }[]>(
-    []
-  );
+  const [registro, setRegistro] = useState<{ membroId: string; nome: string }[]>([]);
 
   // ✅ novo estado da busca
   const [busca, setBusca] = useState("");
@@ -418,6 +416,25 @@ export default function SantaCeiaPage() {
       await marcarPresencaNoControle(ano, mes, membroId, nome, !ja);
       await carregarControleDoMes();
 
+      await writeAuditLog({
+        action: ja ? "unmark_presence_control" : "mark_presence_control",
+        entity: "ceia_controle",
+        entityId: `${ym()}:${membroId}`,
+        entityLabel: nome,
+        details: ja
+          ? `Presença removida do controle de ${pad2(mes)}/${ano}.`
+          : `Presença marcada no controle de ${pad2(mes)}/${ano}.`,
+        metadata: {
+          ano,
+          mes,
+          ym: ym(),
+          membroId,
+          nome,
+          presente: !ja,
+          origem: "app/santa-ceia",
+        },
+      });
+
       toast.success(
         ja ? "Presença removida do controle." : "Presença marcada no controle!"
       );
@@ -455,6 +472,25 @@ export default function SantaCeiaPage() {
           } else {
             await registrarCeiaNoMes(ano, mes, membroId, nome);
           }
+
+          await writeAuditLog({
+            action: ja ? "remove_month_record" : "add_month_record",
+            entity: "ceia_registro",
+            entityId: `${ym()}:${membroId}`,
+            entityLabel: nome,
+            details: ja
+              ? `Removido do registro histórico de ${pad2(mes)}/${ano}.`
+              : `Adicionado ao registro histórico de ${pad2(mes)}/${ano}.`,
+            metadata: {
+              ano,
+              mes,
+              ym: ym(),
+              membroId,
+              nome,
+              origem: "app/santa-ceia",
+            },
+          });
+
           await recarregarAbaAtual();
         },
         success: ja
@@ -599,6 +635,21 @@ export default function SantaCeiaPage() {
       fn: async () => {
         const res = await finalizarCeiaDoMes(ano, mes);
 
+        await writeAuditLog({
+          action: "finalize_month",
+          entity: "ceia_mes",
+          entityId: ym(),
+          entityLabel: `${pad2(mes)}/${ano}`,
+          details: `Santa Ceia do mês finalizada. ${res.total} pessoa(s) copiadas para o registro.`,
+          metadata: {
+            ano,
+            mes,
+            ym: ym(),
+            total: res.total,
+            origem: "app/santa-ceia",
+          },
+        });
+
         toast.success(
           `Finalizado! ${res.total} pessoa(s) registradas no histórico.`
         );
@@ -627,6 +678,22 @@ export default function SantaCeiaPage() {
       busySetter: setDesmarcando,
       fn: async () => {
         const res = await desmarcarTodosNoControle(ano, mes);
+
+        await writeAuditLog({
+          action: "clear_control_month",
+          entity: "ceia_mes",
+          entityId: ym(),
+          entityLabel: `${pad2(mes)}/${ano}`,
+          details: `Todas as presenças do controle foram removidas.`,
+          metadata: {
+            ano,
+            mes,
+            ym: ym(),
+            totalRemovido: res.total,
+            origem: "app/santa-ceia",
+          },
+        });
+
         toast.success(`Ok! ${res.total} presença(s) removida(s) no Controle.`);
 
         await carregarControleDoMes();
@@ -647,6 +714,21 @@ export default function SantaCeiaPage() {
       busySetter: setSyncingRegistro,
       fn: async () => {
         const r = await syncRegistroAnualFromSheets({ ano, membros });
+
+        await writeAuditLog({
+          action: "sync_record_from_sheets",
+          entity: "ceia_registro",
+          entityId: String(ano),
+          entityLabel: `Registro anual ${ano}`,
+          details: `Sincronização do Sheets concluída.`,
+          metadata: {
+            ano,
+            gravados: r.gravados,
+            ignorados: r.ignorados,
+            origem: "app/santa-ceia",
+          },
+        });
+
         toast.success(
           `Sincronização concluída! gravados=${r.gravados} ignorados=${r.ignorados}`
         );
@@ -670,6 +752,23 @@ export default function SantaCeiaPage() {
       busySetter: setSyncingControle,
       fn: async () => {
         const r = await syncControleFromSheets({ ano, mes, membros });
+
+        await writeAuditLog({
+          action: "sync_control_from_sheets",
+          entity: "ceia_controle",
+          entityId: ym(),
+          entityLabel: `${pad2(mes)}/${ano}`,
+          details: `Sincronização do controle do Sheets concluída.`,
+          metadata: {
+            ano,
+            mes,
+            ym: ym(),
+            marcados: r.marcados,
+            ignorados: r.ignorados,
+            origem: "app/santa-ceia",
+          },
+        });
+
         toast.success(
           `Sincronização concluída! marcados=${r.marcados} ignorados=${r.ignorados}`
         );
