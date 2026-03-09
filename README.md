@@ -1,9 +1,6 @@
 # Gestão IPDA – Caxias
 
 Sistema SaaS para gestão administrativa de igrejas desenvolvido com **Next.js, Firebase e TypeScript**.
-# Gestão IPDA – Caxias
-
-Sistema SaaS para gestão administrativa de igrejas desenvolvido com **Next.js, Firebase e TypeScript**.
 
 [![Next.js](https://img.shields.io/badge/Next.js-Framework-black?logo=next.js)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-Language-blue?logo=typescript)]()
