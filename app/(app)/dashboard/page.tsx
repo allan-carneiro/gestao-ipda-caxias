@@ -45,7 +45,6 @@ import {
 
 import { calcularIdade } from "@/src/lib/idade";
 
-// ✅ Recharts
 import {
   ResponsiveContainer,
   PieChart,
@@ -155,7 +154,6 @@ function parseAnoMesId(id: string) {
   return { ano, mes };
 }
 
-// ✅ UI-only: "YYYY-MM" -> "MM/YYYY"
 function formatMesKeyToPtBRShort(mesKey: string): string {
   const mm = String(mesKey ?? "")
     .trim()
@@ -164,41 +162,43 @@ function formatMesKeyToPtBRShort(mesKey: string): string {
   return `${mm[2]}/${mm[1]}`;
 }
 
-function formatRecentActivityText(item: RecentActivityItem) {
-  const actor =
-    String(item.userDisplayName ?? "").trim() ||
-    String(item.userEmail ?? "").trim() ||
-    "Usuário";
+function normalizeActionKey(action: string) {
+  return String(action ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
 
-  const action = String(item.action ?? "").trim() || "realizou uma ação";
-  const entity = String(item.entity ?? "").trim();
+function formatRecentActivityText(item: RecentActivityItem) {
+  const actor = "Secretaria";
+
+  const action = normalizeActionKey(item.action);
   const label = String(item.entityLabel ?? "").trim();
 
-  const actionMap: Record<string, string> = {
-    marcar_presenca_ceia: "marcou presença na Ceia",
-    criar_membro: "criou membro",
-    editar_membro: "editou membro",
-    inativar_membro: "inativou membro",
-    reativar_membro: "reativou membro",
-    excluir_membro: "excluiu membro",
-    registrar_evangelismo: "registrou evangelismo",
-  };
+  let actionLabel = "";
 
-  const entityMap: Record<string, string> = {
-    membro: "membro",
-    ceia: "Ceia",
-    evangelismo: "evangelismo",
-  };
-
-  const actionLabel = actionMap[action] ?? action.replaceAll("_", " ");
-  const entityLabel = entityMap[entity] ?? entity;
+  if (action === "mark_presence_control") {
+  actionLabel = "marcou presença na Ceia";
+} else if (action === "unmark_presence_control") {
+  actionLabel = "desmarcou presença na Ceia";
+} else if (action === "create_member") {
+  actionLabel = "criou membro";
+} else if (action === "update_member") {
+  actionLabel = "editou membro";
+} else if (action === "inactivate_member") {
+  actionLabel = "inativou membro";
+} else if (action === "reactivate_member") {
+  actionLabel = "reativou membro";
+} else if (action === "delete_member") {
+  actionLabel = "excluiu membro";
+} else if (action === "register_evangelism") {
+  actionLabel = "registrou evangelismo";
+} else {
+  actionLabel = action.replaceAll("_", " ") || "realizou uma ação";
+}
 
   if (label) {
     return `${actor} ${actionLabel} — ${label}`;
-  }
-
-  if (entityLabel) {
-    return `${actor} ${actionLabel} — ${entityLabel}`;
   }
 
   return `${actor} ${actionLabel}`;
@@ -337,21 +337,17 @@ function ListBox<T extends ListItemBase>(props: {
 
     const digits = onlyDigits(raw);
     const isOnlyDigits = digits.length === raw.length;
-
     const termText = normalizeText(raw);
 
-    // 1) Só números: CPF/idade
     if (isOnlyDigits) {
       return items.filter((x) => {
         const cpfDigits = onlyDigits((x as any).cpf ?? "");
         const idade = showAge ? calcularIdade(x.dataNascimento ?? null) : null;
 
-        // CPF (11 dígitos)
         if (digits.length === 11) {
           return cpfDigits.startsWith(digits);
         }
 
-        // Idade (1–3 dígitos) -> exato
         if (digits.length >= 1 && digits.length <= 3) {
           if (idade == null) return false;
 
@@ -361,12 +357,10 @@ function ListBox<T extends ListItemBase>(props: {
           return idade === n;
         }
 
-        // Outros números: tenta CPF contém
         return cpfDigits.includes(digits);
       });
     }
 
-    // 2) Texto: filtra + ordena por relevância
     const base = items.filter((x) => {
       const nome = normalizeText(x.nome || "");
       return nome.includes(termText);
@@ -524,10 +518,6 @@ function ListBox<T extends ListItemBase>(props: {
     </div>
   );
 }
-
-/* ============================
-   GRÁFICOS — CARDS
-============================ */
 
 function MiniBar({
   label,
