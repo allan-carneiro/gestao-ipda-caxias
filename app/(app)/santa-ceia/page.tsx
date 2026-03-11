@@ -7,6 +7,9 @@ import { collection, getDocs } from "firebase/firestore";
 import { db, writeAuditLog } from "@/src/lib/firebase";
 import AuthGuard from "@/app/components/AuthGuard";
 import { useToast } from "@/app/components/ToastProvider";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import type { UserRole } from "@/src/types/auth";
 
 import {
   syncRegistroAnualFromSheets,
@@ -31,8 +34,6 @@ type MembroListaItem = {
   congregacao?: string | null;
   pastor?: string | null;
   telCarta?: string | null;
-
-  // ✅ novos campos para busca inteligente
   cpf?: string | null;
   telefone?: string | null;
   dataNascimento?: string | null;
@@ -130,7 +131,6 @@ function calcularIdade(dataNascimento?: string | null) {
   return idade;
 }
 
-// ✅ blindagem: garante que nunca passa lixo como id
 function assertMembroId(membroId: unknown) {
   if (typeof membroId !== "string")
     throw new Error("membroId inválido (não é string).");
@@ -148,6 +148,9 @@ export default function SantaCeiaPage() {
   const { ano: anoAtual, mes: mesAtual } = useMemo(agoraAnoMes, []);
   const [aba, setAba] = useState<"controle" | "registro">("controle");
 
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [loadingRole, setLoadingRole] = useState(true);
+
   const [ano, setAno] = useState<number>(anoAtual);
   const [mes, setMes] = useState<number>(mesAtual);
 
@@ -157,7 +160,6 @@ export default function SantaCeiaPage() {
   >([]);
   const [registro, setRegistro] = useState<{ membroId: string; nome: string }[]>([]);
 
-  // ✅ novo estado da busca
   const [busca, setBusca] = useState("");
 
   const [loadingMembros, setLoadingMembros] = useState(true);
@@ -171,9 +173,10 @@ export default function SantaCeiaPage() {
   const [baixandoControle, setBaixandoControle] = useState(false);
   const [baixandoRegistro, setBaixandoRegistro] = useState(false);
 
-  // ✅ trava de ação por membro (anti “duplo clique / corrida”)
   const togglingControleRef = useRef<Set<string>>(new Set());
   const togglingRegistroRef = useRef<Set<string>>(new Set());
+
+  const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
 
   function toastErro(e: any, fallback: string) {
     const msg =
@@ -203,16 +206,10 @@ export default function SantaCeiaPage() {
     }
   }
 
-  // =========================
-  // Helpers do mês atual
-  // =========================
   function ym() {
     return `${ano}-${pad2(mes)}`;
   }
 
-  // =========================
-  // ✅ CORRIGIDO: carrega controle usando a mesma lógica do ceia.ts
-  // =========================
   async function carregarControleDoMes() {
     if (membros.length === 0) {
       setControle([]);
@@ -238,15 +235,37 @@ export default function SantaCeiaPage() {
     setControle(itens);
   }
 
-  // =========================
-  // Carrega membros
-  // =========================
   useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (active) setUserRole(role);
+      } catch (error) {
+        console.error(error);
+        if (active) setUserRole(null);
+      } finally {
+        if (active) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loadingRole || !userRole) return;
+
     (async () => {
       try {
         setLoadingMembros(true);
 
-        const snap = await getDocs(collection(db, "membros"));
+        const snap = await getDocs(collection(db, paths.membros));
         const list: MembroListaItem[] = snap.docs.map((d) => {
           const data = d.data() as any;
           return {
@@ -256,8 +275,6 @@ export default function SantaCeiaPage() {
             congregacao: data.congregacao ?? null,
             pastor: data.pastor ?? null,
             telCarta: data.telCarta ?? null,
-
-            // ✅ campos usados na busca
             cpf: data.cpf ?? null,
             telefone: data.telefoneCelular ?? data.telefone ?? null,
             dataNascimento: data.dataNascimento ?? null,
@@ -282,12 +299,11 @@ export default function SantaCeiaPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadingRole, userRole, paths.membros]);
 
-  // =========================
-  // Carrega dados da aba atual
-  // =========================
   async function recarregarAbaAtual() {
+    if (!userRole) return;
+
     setLoadingAba(true);
 
     try {
@@ -310,13 +326,12 @@ export default function SantaCeiaPage() {
   }
 
   useEffect(() => {
-    recarregarAbaAtual();
+    if (!loadingRole && userRole) {
+      void recarregarAbaAtual();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aba, ano, mes, membros.length]);
+  }, [aba, ano, mes, membros.length, loadingRole, userRole]);
 
-  // =========================
-  // Mapas e Sets
-  // =========================
   const mapaNome = useMemo(() => {
     const m = new Map<string, string>();
     membros.forEach((x) => m.set(x.id, x.nome));
@@ -339,6 +354,7 @@ export default function SantaCeiaPage() {
   const totalRegistroMes = registroSet.size;
 
   const isBusy =
+    loadingRole ||
     loadingMembros ||
     loadingAba ||
     syncingControle ||
@@ -348,9 +364,6 @@ export default function SantaCeiaPage() {
     baixandoControle ||
     baixandoRegistro;
 
-  // =========================
-  // ✅ busca inteligente client-side
-  // =========================
   const membrosFiltrados = useMemo(() => {
     const termo = busca.trim();
 
@@ -382,9 +395,6 @@ export default function SantaCeiaPage() {
     });
   }, [busca, membros]);
 
-  // =========================
-  // Ações: marcar/desmarcar
-  // =========================
   async function toggleControle(membroIdRaw: string) {
     if (isBusy) return;
 
@@ -503,9 +513,6 @@ export default function SantaCeiaPage() {
     }
   }
 
-  // =========================
-  // BAIXAR: Dia da Ceia (Controle do mês) — XLSX corporativo
-  // =========================
   async function baixarControleDoMes() {
     if (isBusy || aba !== "controle") return;
 
@@ -543,9 +550,6 @@ export default function SantaCeiaPage() {
     });
   }
 
-  // =========================
-  // BAIXAR: Ceia-Registro Anual — XLSX corporativo
-  // =========================
   async function baixarRegistroAnual() {
     if (isBusy || aba !== "registro") return;
 
@@ -617,9 +621,6 @@ export default function SantaCeiaPage() {
     });
   }
 
-  // =========================
-  // Finalizar mês (controle -> registro)
-  // =========================
   async function finalizarMes() {
     if (isBusy) return;
 
@@ -661,9 +662,6 @@ export default function SantaCeiaPage() {
     });
   }
 
-  // =========================
-  // Desmarcar todos (controle)
-  // =========================
   async function handleDesmarcarTodosControle() {
     if (isBusy) return;
 
@@ -859,11 +857,11 @@ export default function SantaCeiaPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow p-4">
-          {(loadingMembros || loadingAba) && (
+          {(loadingRole || loadingMembros || loadingAba) && (
             <p className="text-gray-600">Carregando…</p>
           )}
 
-          {!loadingMembros && !loadingAba && (
+          {!loadingRole && !loadingMembros && !loadingAba && (
             <>
               <h2 className="text-xl font-semibold">
                 {aba === "controle"
@@ -886,7 +884,7 @@ export default function SantaCeiaPage() {
                   onChange={(e) => setBusca(e.target.value)}
                   placeholder="Ex.: José, 65, 21987654321, 12345678900"
                   className="w-full mt-1 border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
-                  disabled={loadingMembros || loadingAba}
+                  disabled={loadingRole || loadingMembros || loadingAba}
                 />
                 <div className="mt-2 text-sm text-gray-600">
                   Mostrando <strong>{membrosFiltrados.length}</strong> de{" "}
