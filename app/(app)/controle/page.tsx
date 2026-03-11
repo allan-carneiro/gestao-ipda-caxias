@@ -88,7 +88,6 @@ export default function SantaCeiaControlePage() {
     };
   }, []);
 
-  // Carrega membros
   useEffect(() => {
     let alive = true;
 
@@ -133,7 +132,6 @@ export default function SantaCeiaControlePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userRole, paths.membros]);
 
-  // Carrega participantes marcados
   useEffect(() => {
     let alive = true;
 
@@ -142,7 +140,9 @@ export default function SantaCeiaControlePage() {
 
       try {
         const lista = await listarControleCeia(year, month);
-        const set = new Set(lista.filter((p) => p.presente).map((p) => p.membroId));
+        const set = new Set(
+          lista.filter((p) => p.presente).map((p) => p.membroId)
+        );
 
         if (!alive) return;
         setParticipantesSet(set);
@@ -161,6 +161,8 @@ export default function SantaCeiaControlePage() {
   }, [year, month, userRole]);
 
   async function toggleParticipou(m: MembroListItem) {
+    if (loading || loadingRole || !userRole) return;
+
     try {
       const ja = participantesSet.has(m.id);
       const novo = new Set(participantesSet);
@@ -224,6 +226,7 @@ export default function SantaCeiaControlePage() {
               onChange={(e) => setYear(Number(e.target.value || now.getFullYear()))}
               className="mt-2 w-full rounded-xl border px-3 py-2"
               inputMode="numeric"
+              disabled={loading || loadingRole}
             />
           </div>
 
@@ -233,6 +236,7 @@ export default function SantaCeiaControlePage() {
               value={month}
               onChange={(e) => setMonth(Number(e.target.value))}
               className="mt-2 w-full rounded-xl border px-3 py-2 bg-white"
+              disabled={loading || loadingRole}
             >
               {Array.from({ length: 12 }).map((_, i) => {
                 const m = i + 1;
@@ -255,6 +259,7 @@ export default function SantaCeiaControlePage() {
                 onChange={(e) => setQText(e.target.value)}
                 className="mt-2 w-full rounded-xl border px-3 py-2"
                 placeholder="Digite nome ou telefone…"
+                disabled={loading || loadingRole}
               />
             </div>
           </div>
@@ -283,11 +288,12 @@ export default function SantaCeiaControlePage() {
                   key={m.id}
                   type="button"
                   onClick={() => toggleParticipou(m)}
+                  disabled={loading || loadingRole}
                   className={`w-full flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left hover:bg-gray-50 transition ${
                     marcado
                       ? "border-green-300 bg-green-50"
                       : "border-gray-200 bg-white"
-                  }`}
+                  } ${loading || loadingRole ? "opacity-60 cursor-not-allowed" : ""}`}
                 >
                   <div>
                     <p className="font-semibold text-gray-900">
