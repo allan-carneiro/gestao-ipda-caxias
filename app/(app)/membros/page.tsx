@@ -13,27 +13,22 @@ import {
 import { db } from "@/src/lib/firebase";
 import { useToast } from "@/app/components/ToastProvider";
 import { normalizeText, onlyDigits } from "@/src/lib/membroSearch";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import type { UserRole } from "@/src/types/auth";
 
 type Status = "Ativo" | "Inativo";
 
 type Membro = {
   id: string;
-
-  // básicos
   nomeCompleto?: string;
-  nome?: string; // compat antigos
+  nome?: string;
   telefoneCelular?: string;
-  telefone?: string; // compat antigos
+  telefone?: string;
   cargoEclesiastico?: string;
   status?: Status;
-
-  // ✅ para idade (não salva; apenas exibe)
-  dataNascimento?: string; // yyyy-mm-dd (ou pode vir em formatos antigos)
-
-  // ✅ cpf (para busca)
+  dataNascimento?: string;
   cpf?: string | null;
-
-  // novos campos
   numeroRol?: number | string;
   ipdaPastor?: string;
   telCarta?: string;
@@ -58,9 +53,6 @@ function isoNow() {
   return new Date().toISOString();
 }
 
-/* ============================
-   IDADE (runtime, não salva)
-============================ */
 function isValidDate(d: Date) {
   return d instanceof Date && !Number.isNaN(d.getTime());
 }
@@ -76,7 +68,6 @@ function parseNascimentoToDate(v?: string | null) {
   const s = String(v ?? "").trim();
   if (!s) return null;
 
-  // dd/mm/aaaa
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
     const iso = parseBRToISO(s);
     if (!iso) return null;
@@ -84,13 +75,11 @@ function parseNascimentoToDate(v?: string | null) {
     return isValidDate(d) ? d : null;
   }
 
-  // yyyy-mm-dd
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const d = new Date(`${s}T00:00:00`);
     return isValidDate(d) ? d : null;
   }
 
-  // fallback
   const d = new Date(s);
   return isValidDate(d) ? d : null;
 }
@@ -113,9 +102,6 @@ function formatarIdade(idade: number | null) {
   return `${idade} ano${idade === 1 ? "" : "s"}`;
 }
 
-/* ============================
-   SCORE de busca por nome (para ordenar)
-============================ */
 function scoreNomeMatch(nomeOriginal: string, termo: string) {
   const nome = normalizeText(nomeOriginal);
   const q = normalizeText(termo);
@@ -124,10 +110,6 @@ function scoreNomeMatch(nomeOriginal: string, termo: string) {
 
   const words = nome.split(/\s+/).filter(Boolean);
 
-  // prioridade:
-  // 300 -> começa com "jose"
-  // 200 -> tem palavra "jose" em qualquer posição
-  // 100 -> contém "jose" em substring
   if (words[0] === q) return 300;
   if (words.includes(q)) return 200;
   if (nome.includes(q)) return 100;
@@ -135,9 +117,6 @@ function scoreNomeMatch(nomeOriginal: string, termo: string) {
   return 0;
 }
 
-/* ============================
-   MODAL (mesmo padrão do [id]/page.tsx)
-============================ */
 function Modal({
   open,
   title,
@@ -226,28 +205,57 @@ export default function MembrosPage() {
   }
 
   const [loading, setLoading] = useState(true);
+  const [loadingRole, setLoadingRole] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [membros, setMembros] = useState<Membro[]>([]);
 
-  // filtros
   const [busca, setBusca] = useState("");
   const [filtroCargo, setFiltroCargo] = useState<string>("");
   const [filtroStatus, setFiltroStatus] = useState<"" | Status>("");
 
-  // modal (toggle)
   const [modalOpen, setModalOpen] = useState(false);
   const [modalKind, setModalKind] = useState<"inativar" | "ativar">("inativar");
   const [modalMembroId, setModalMembroId] = useState<string | null>(null);
   const [modalNome, setModalNome] = useState<string>("");
 
-  // loading por linha + loading do modal
   const [rowLoading, setRowLoading] = useState<Record<string, boolean>>({});
+
   const actionLoading = modalMembroId ? !!rowLoading[modalMembroId] : false;
+  const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (active) setUserRole(role);
+      } catch (error) {
+        console.error(error);
+        if (active) setUserRole(null);
+      } finally {
+        if (active) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function carregar(opts?: { silent?: boolean }) {
+    if (!userRole) return;
+
     try {
       setLoading(true);
 
-      const q = query(collection(db, "membros"), orderBy("nomeCompleto", "asc"));
+      const q = query(
+        collection(db, paths.membros),
+        orderBy("nomeCompleto", "asc")
+      );
       const snap = await getDocs(q);
 
       const list: Membro[] = snap.docs.map((d) => {
@@ -261,13 +269,8 @@ export default function MembrosPage() {
           telefone: data.telefone,
           cargoEclesiastico: data.cargoEclesiastico ?? "",
           status: statusSeguro(data.status),
-
-          // ✅ pega dataNascimento para idade
           dataNascimento: data.dataNascimento ?? data.nascimento ?? undefined,
-
-          // ✅ cpf (pode estar com máscara)
           cpf: data.cpf ?? null,
-
           numeroRol: data.numeroRol ?? data.numero ?? data.nro ?? undefined,
           ipdaPastor: data.ipdaPastor ?? data.ipda_e_pastor ?? undefined,
           telCarta: data.telCarta ?? data.tel_carta ?? undefined,
@@ -285,11 +288,12 @@ export default function MembrosPage() {
   }
 
   useEffect(() => {
-    carregar({ silent: true });
+    if (!loadingRole && userRole) {
+      void carregar({ silent: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadingRole, userRole, paths.membros]);
 
-  // ✅ calcula idade uma vez por membro (memo)
   const membrosComIdade = useMemo(() => {
     return membros.map((m) => {
       const idade = calcularIdade(m.dataNascimento ?? null);
@@ -301,11 +305,9 @@ export default function MembrosPage() {
     });
   }, [membros]);
 
-  // ✅ Busca “inteligente” + ordenação por relevância quando for texto (nome)
   const membrosFiltrados = useMemo(() => {
     const raw = busca.trim();
 
-    // sempre aplica cargo/status
     const baseFiltrada = membrosComIdade.filter((m: any) => {
       const cargo = (m.cargoEclesiastico || "").trim();
       const status = statusSeguro(m.status);
@@ -320,11 +322,8 @@ export default function MembrosPage() {
 
     const digits = onlyDigits(raw);
     const isOnlyDigits = digits.length === raw.length;
-
-    // normalizações úteis
     const termText = normalizeText(raw);
 
-    // 1) Se digitou SÓ números: mantém sua lógica atual
     if (isOnlyDigits) {
       return baseFiltrada.filter((m: any) => {
         const telDigits = onlyDigits(m.telefoneCelular || m.telefone || "");
@@ -333,12 +332,10 @@ export default function MembrosPage() {
         const cpfDigits = onlyDigits(m.cpf ?? "");
         const idade: number | null = m._idade ?? null;
 
-        // CPF (11 dígitos) -> começa com (permite buscar parcial)
         if (digits.length === 11) {
           return cpfDigits.startsWith(digits);
         }
 
-        // IDADE (1–3 dígitos) -> exato
         if (digits.length >= 1 && digits.length <= 3) {
           if (idade == null) return false;
 
@@ -348,7 +345,6 @@ export default function MembrosPage() {
           return idade === n;
         }
 
-        // números longos -> busca por dígitos
         return (
           telDigits.includes(digits) ||
           nrDigits.includes(digits) ||
@@ -358,10 +354,8 @@ export default function MembrosPage() {
       });
     }
 
-    // 2) Texto: filtra por nome e campos textuais
     const filtrados = baseFiltrada.filter((m: any) => {
       const nomeNorm = normalizeText(m.nomeCompleto || m.nome || "");
-
       const ipda = normalizeText(m.ipdaPastor ?? "");
       const nrTxt = normalizeText(String(m.numeroRol ?? ""));
       const tcTxt = normalizeText(m.telCarta ?? "");
@@ -374,7 +368,6 @@ export default function MembrosPage() {
       );
     });
 
-    // 3) Texto: ordena por relevância (nome começa com termo, etc.)
     filtrados.sort((a: any, b: any) => {
       const nomeAOriginal = a.nomeCompleto || a.nome || "";
       const nomeBOriginal = b.nomeCompleto || b.nome || "";
@@ -384,7 +377,6 @@ export default function MembrosPage() {
 
       if (sA !== sB) return sB - sA;
 
-      // desempate: A→Z (sem acento)
       return normalizeText(nomeAOriginal).localeCompare(
         normalizeText(nomeBOriginal),
         "pt-BR"
@@ -394,7 +386,6 @@ export default function MembrosPage() {
     return filtrados;
   }, [membrosComIdade, busca, filtroCargo, filtroStatus]);
 
-  // ✅ Contagens consistentes com o Dashboard: total = ativos + inativos
   const contagens = useMemo(() => {
     let ativos = 0;
     let inativos = 0;
@@ -439,7 +430,7 @@ export default function MembrosPage() {
     try {
       setRowLoading((p) => ({ ...p, [id]: true }));
 
-      await updateDoc(doc(db, "membros", id), {
+      await updateDoc(doc(db, paths.membros, id), {
         status: novo,
         updatedAt: isoNow(),
       } as any);
@@ -470,7 +461,7 @@ export default function MembrosPage() {
             Membros
           </h1>
           <p className="text-gray-600 mt-1">
-            {loading ? (
+            {loading || loadingRole ? (
               "Carregando lista…"
             ) : (
               <>
@@ -492,7 +483,6 @@ export default function MembrosPage() {
         </Link>
       </div>
 
-      {/* filtros */}
       <div className="bg-white rounded-3xl shadow p-4 md:p-5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
@@ -557,7 +547,7 @@ export default function MembrosPage() {
 
           <button
             type="button"
-            onClick={() => carregar()}
+            onClick={() => void carregar()}
             className="px-3 py-2 rounded-xl bg-white border hover:bg-gray-50 text-sm font-semibold"
           >
             Atualizar lista
@@ -565,9 +555,8 @@ export default function MembrosPage() {
         </div>
       </div>
 
-      {/* lista */}
       <div className="space-y-3">
-        {!loading && membrosFiltrados.length === 0 ? (
+        {!loading && !loadingRole && membrosFiltrados.length === 0 ? (
           <div className="bg-white rounded-2xl shadow p-5">
             Nenhum membro encontrado com os filtros atuais.
           </div>
@@ -602,7 +591,6 @@ export default function MembrosPage() {
                   </span>
                 </p>
 
-                {/* ✅ Idade */}
                 <p className="text-sm text-gray-600">
                   Idade:{" "}
                   <span className="font-semibold text-gray-900">
@@ -667,7 +655,6 @@ export default function MembrosPage() {
         })}
       </div>
 
-      {/* MODAL */}
       <Modal open={modalOpen} title={modalTitle} onClose={closeModal}>
         {modalKind === "inativar" ? (
           <div className="space-y-4">
@@ -689,7 +676,7 @@ export default function MembrosPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setStatus("Inativo")}
+                onClick={() => void setStatus("Inativo")}
                 className="px-4 py-2 rounded-xl bg-amber-600 text-white font-semibold hover:bg-amber-700 disabled:opacity-60"
                 disabled={actionLoading}
               >
@@ -716,7 +703,7 @@ export default function MembrosPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setStatus("Ativo")}
+                onClick={() => void setStatus("Ativo")}
                 className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-60"
                 disabled={actionLoading}
               >
