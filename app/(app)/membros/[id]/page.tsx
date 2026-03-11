@@ -18,6 +18,7 @@ import { db, writeAuditLog } from "@/src/lib/firebase";
 import AuthGuard from "@/app/components/AuthGuard";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
 import { getPaths } from "@/src/lib/demo/paths";
+import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
 import type { UserRole } from "@/src/types/auth";
 
 type Status = "Ativo" | "Inativo";
@@ -297,6 +298,11 @@ export default function VerMembroPage() {
   const [actionLoading, setActionLoading] = useState(false);
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+  const allowEditMembers = useMemo(
+    () => canEditMembers(userRole ?? undefined),
+    [userRole]
+  );
+  const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
 
   useEffect(() => {
     let active = true;
@@ -385,6 +391,7 @@ export default function VerMembroPage() {
   const idadeTxt = useMemo(() => formatarIdade(idade), [idade]);
 
   function openModal(kind: "inativar" | "ativar" | "excluir") {
+    if (!allowEditMembers) return;
     setErro(null);
     setSucesso(null);
     setModalKind(kind);
@@ -397,7 +404,7 @@ export default function VerMembroPage() {
   }
 
   async function setStatus(novo: Status) {
-    if (!memberId || !membro) return;
+    if (!memberId || !membro || !allowEditMembers) return;
 
     try {
       setActionLoading(true);
@@ -461,7 +468,7 @@ export default function VerMembroPage() {
   }
 
   async function excluirDefinitivo() {
-    if (!memberId || !membro) return;
+    if (!memberId || !membro || !allowEditMembers) return;
 
     try {
       setActionLoading(true);
@@ -546,6 +553,12 @@ export default function VerMembroPage() {
                 <p className="text-sm text-amber-700 mt-1">
                   Este cadastro antigo está sem status. Entre em “Editar” e
                   selecione Ativo/Inativo.
+                </p>
+              ) : null}
+
+              {demoMode ? (
+                <p className="text-sm text-amber-700 mt-2">
+                  Modo demonstração: alterações neste cadastro estão desabilitadas.
                 </p>
               ) : null}
 
@@ -685,7 +698,12 @@ export default function VerMembroPage() {
                 <div className="mt-6 flex flex-col md:flex-row gap-3">
                   <Link
                     href={editarHref}
-                    className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 text-center"
+                    className={[
+                      "px-6 py-3 rounded-xl font-semibold text-center",
+                      allowEditMembers
+                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                        : "bg-gray-200 text-gray-500 pointer-events-none",
+                    ].join(" ")}
                   >
                     Editar
                   </Link>
@@ -694,7 +712,8 @@ export default function VerMembroPage() {
                     <button
                       type="button"
                       onClick={() => openModal("inativar")}
-                      className="bg-amber-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-amber-700"
+                      disabled={!allowEditMembers}
+                      className="bg-amber-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-amber-700 disabled:opacity-60"
                     >
                       Inativar
                     </button>
@@ -702,7 +721,8 @@ export default function VerMembroPage() {
                     <button
                       type="button"
                       onClick={() => openModal("ativar")}
-                      className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-emerald-700"
+                      disabled={!allowEditMembers}
+                      className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-emerald-700 disabled:opacity-60"
                     >
                       Ativar
                     </button>
@@ -711,7 +731,8 @@ export default function VerMembroPage() {
                   <button
                     type="button"
                     onClick={() => openModal("excluir")}
-                    className="bg-red-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-red-700"
+                    disabled={!allowEditMembers}
+                    className="bg-red-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-red-700 disabled:opacity-60"
                   >
                     Excluir definitivo
                   </button>
@@ -751,7 +772,7 @@ export default function VerMembroPage() {
                   type="button"
                   onClick={() => void setStatus("Inativo")}
                   className="px-4 py-2 rounded-xl bg-amber-600 text-white font-semibold hover:bg-amber-700 disabled:opacity-60"
-                  disabled={actionLoading}
+                  disabled={actionLoading || !allowEditMembers}
                 >
                   {actionLoading ? "Inativando..." : "Confirmar"}
                 </button>
@@ -778,7 +799,7 @@ export default function VerMembroPage() {
                   type="button"
                   onClick={() => void setStatus("Ativo")}
                   className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-60"
-                  disabled={actionLoading}
+                  disabled={actionLoading || !allowEditMembers}
                 >
                   {actionLoading ? "Ativando..." : "Confirmar"}
                 </button>
@@ -811,7 +832,7 @@ export default function VerMembroPage() {
                   type="button"
                   onClick={() => void excluirDefinitivo()}
                   className="px-4 py-2 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-60"
-                  disabled={actionLoading}
+                  disabled={actionLoading || !allowEditMembers}
                 >
                   {actionLoading ? "Excluindo..." : "Excluir definitivamente"}
                 </button>
