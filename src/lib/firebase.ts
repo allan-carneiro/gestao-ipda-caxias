@@ -9,6 +9,9 @@ import {
 } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
+import { getPaths } from "./demo/paths";
+import { getUserRoleFromToken } from "./auth/getUserRole";
+
 const firebaseConfig = {
   apiKey: "AIzaSyDs0q_-lJbt21SazyTX3Dj4R4NXVy2_5Yc",
   authDomain: "gestao-igreja-deus-e-amor.firebaseapp.com",
@@ -57,9 +60,8 @@ export type WriteAuditLogInput = {
   metadata?: Record<string, any> | null;
 };
 
-function sanitizeForAudit(value: any): any {
-  if (value === undefined) return null;
-  if (value === null) return null;
+function sanitizeForAudit(value: unknown): unknown {
+  if (value === undefined || value === null) return null;
 
   if (
     typeof value === "string" ||
@@ -74,10 +76,12 @@ function sanitizeForAudit(value: any): any {
   }
 
   if (typeof value === "object") {
-    const out: Record<string, any> = {};
-    for (const [k, v] of Object.entries(value)) {
-      out[k] = sanitizeForAudit(v);
+    const out: Record<string, unknown> = {};
+
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = sanitizeForAudit(val);
     }
+
     return out;
   }
 
@@ -87,8 +91,10 @@ function sanitizeForAudit(value: any): any {
 export async function writeAuditLog(input: WriteAuditLogInput) {
   try {
     const user = auth.currentUser;
+    const role = await getUserRoleFromToken();
+    const paths = getPaths(role ?? undefined);
 
-    await addDoc(collection(db, "auditoria"), {
+    await addDoc(collection(db, paths.auditoria), {
       action: input.action,
       entity: input.entity,
       entityId: input.entityId ?? null,
