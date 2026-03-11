@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, collection } from "firebase/firestore";
 import { db, writeAuditLog } from "@/src/lib/firebase";
 import AuthGuard from "@/app/components/AuthGuard";
@@ -8,9 +8,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { uploadImageToCloudinary } from "@/src/lib/cloudinary";
 import { useToast } from "@/app/components/ToastProvider";
-
-// ✅ camada enterprise (não altera UI; só valida/normaliza antes de gravar)
 import { cleanMembroPayload } from "@/src/lib/validators";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import type { UserRole } from "@/src/types/auth";
 
 type EstadoCivil =
   | "Solteiro(a)"
@@ -24,7 +25,6 @@ type Status = "Ativo" | "Inativo";
 type TelCarta = "" | "Tel." | "Carta";
 
 type Membro = {
-  // identificação
   nomeCompleto?: string;
   dataNascimento?: string;
   cpf?: string;
@@ -32,12 +32,10 @@ type Membro = {
   estadoCivil?: EstadoCivil;
   nomeConjuge?: string | null;
 
-  // contato
   telefoneCelular?: string;
   telefoneResidencial?: string | null;
   email?: string | null;
 
-  // endereço
   endereco?: {
     logradouro?: string;
     numero?: string;
@@ -50,34 +48,27 @@ type Membro = {
     cep?: string | null;
   };
 
-  // igreja
   dataBatismo?: string | null;
   campo?: string;
   congregacao?: string;
   pastor?: string;
   cargoEclesiastico?: string;
 
-  // dados pessoais
   naturalidade?: string | null;
   escolaridade?: string | null;
   profissao?: string | null;
   filhosQtd?: number | null;
   netosQtd?: number | null;
 
-  // status/obs
   status?: Status;
   observacoes?: string | null;
 
-  // FOTO (Cloudinary)
   fotoUrl?: string | null;
-
-  // anexos (futuro)
   anexos?: any[];
 
-  // ===== Campos extras p/ Ceia e planilhas =====
-  numeroRol?: number | null; // Nº do rol
-  ipdaPastor?: string | null; // IPDA / Pastor
-  telCarta?: "Tel." | "Carta" | null; // Tel. ou Carta
+  numeroRol?: number | null;
+  ipdaPastor?: string | null;
+  telCarta?: "Tel." | "Carta" | null;
 
   createdAt?: string;
   updatedAt?: string;
@@ -103,7 +94,6 @@ function isStatusValido(v: any): v is Status {
   return v === "Ativo" || v === "Inativo";
 }
 
-// ===== Idade (runtime) =====
 function isValidDate(d: Date) {
   return d instanceof Date && !Number.isNaN(d.getTime());
 }
@@ -119,7 +109,6 @@ function parseNascimentoToDate(v?: string | null) {
   const s = String(v ?? "").trim();
   if (!s) return null;
 
-  // dd/mm/aaaa (caso apareça em dados antigos ou colagens)
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
     const iso = parseBRToISO(s);
     if (!iso) return null;
@@ -127,13 +116,11 @@ function parseNascimentoToDate(v?: string | null) {
     return isValidDate(d) ? d : null;
   }
 
-  // yyyy-mm-dd (input type="date")
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const d = new Date(`${s}T00:00:00`);
     return isValidDate(d) ? d : null;
   }
 
-  // fallback
   const d = new Date(s);
   return isValidDate(d) ? d : null;
 }
@@ -181,17 +168,18 @@ export default function NovoMembroPage() {
   const router = useRouter();
   const toast = useToast();
 
+  const [loadingRole, setLoadingRole] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  // ===== CAMPOS PARA CEIA/PLANILHA =====
   const [numeroRol, setNumeroRol] = useState<string>("");
   const [ipdaPastor, setIpdaPastor] = useState<string>("");
   const [telCarta, setTelCarta] = useState<TelCarta>("");
 
-  // identificação
   const [nomeCompleto, setNomeCompleto] = useState("");
   const [dataNascimento, setDataNascimento] = useState("");
   const [cpf, setCpf] = useState("");
@@ -199,12 +187,10 @@ export default function NovoMembroPage() {
   const [estadoCivil, setEstadoCivil] = useState<EstadoCivil>("Solteiro(a)");
   const [nomeConjuge, setNomeConjuge] = useState("");
 
-  // contato
   const [telefoneCelular, setTelefoneCelular] = useState("");
   const [telefoneResidencial, setTelefoneResidencial] = useState("");
   const [email, setEmail] = useState("");
 
-  // endereço
   const [logradouro, setLogradouro] = useState("");
   const [numero, setNumero] = useState("");
   const [complemento, setComplemento] = useState("");
@@ -215,31 +201,51 @@ export default function NovoMembroPage() {
   const [uf, setUf] = useState("");
   const [cep, setCep] = useState("");
 
-  // igreja
   const [dataBatismo, setDataBatismo] = useState("");
   const [campo, setCampo] = useState("Duque de Caxias");
   const [congregacao, setCongregacao] = useState("");
   const [pastor, setPastor] = useState("");
   const [cargoEclesiastico, setCargoEclesiastico] = useState("");
 
-  // dados pessoais
   const [naturalidade, setNaturalidade] = useState("");
   const [escolaridade, setEscolaridade] = useState("");
   const [profissao, setProfissao] = useState("");
   const [filhosQtd, setFilhosQtd] = useState<string>("");
   const [netosQtd, setNetosQtd] = useState<string>("");
 
-  // ✅ status obrigatório
   const [status, setStatus] = useState<Status>("Ativo");
 
   const [observacoes, setObservacoes] = useState("");
 
-  // foto/anexos
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [anexos, setAnexos] = useState<any[]>([]);
   const [uploadingFoto, setUploadingFoto] = useState(false);
 
-  const isBusy = saving || uploadingFoto;
+  const isBusy = saving || uploadingFoto || loadingRole;
+  const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (active) setUserRole(role);
+      } catch (error) {
+        console.error(error);
+        if (active) setUserRole(null);
+      } finally {
+        if (active) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function toastErro(e: any, fallback: string) {
     const msg =
@@ -278,11 +284,9 @@ export default function NovoMembroPage() {
     }
   }
 
-  // ✅ idade automática no cadastro
   const idade = useMemo(() => calcularIdade(dataNascimento ?? null), [dataNascimento]);
   const idadeTxt = useMemo(() => formatarIdade(idade), [idade]);
 
-  // ========= helpers =========
   function onlyDigits(v: string) {
     return (v || "").replace(/\D/g, "");
   }
@@ -351,7 +355,6 @@ export default function NovoMembroPage() {
     setFieldErrors({});
   }
 
-  // ✅ Helper para tratar HTTP e evitar "Failed to fetch" quebrando o fluxo
   async function fetchJsonNoStore(url: string) {
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
@@ -360,7 +363,6 @@ export default function NovoMembroPage() {
     return res.json();
   }
 
-  // ✅ CEP: ViaCEP (principal) + BrasilAPI (fallback quando ViaCEP cair/502)
   async function buscarCepAuto(cepValue: string) {
     const cepDigits = onlyDigits(cepValue);
     if (cepDigits.length !== 8) return;
@@ -370,21 +372,17 @@ export default function NovoMembroPage() {
 
       let data: any;
 
-      // 1) Tenta ViaCEP
       try {
         data = await fetchJsonNoStore(`https://viacep.com.br/ws/${cepDigits}/json/`);
 
-        // ViaCEP: quando não encontra, retorna { erro: true }
         if (data?.erro) {
           toast.error("CEP não encontrado.");
           setErro("CEP não encontrado.");
           return;
         }
-      } catch (e) {
-        // 2) Fallback: BrasilAPI (quando ViaCEP dá 502 / cai / bloqueia / etc.)
+      } catch {
         const b = await fetchJsonNoStore(`https://brasilapi.com.br/api/cep/v1/${cepDigits}`);
 
-        // Normaliza para o mesmo formato que você já usa
         data = {
           logradouro: b?.street ?? "",
           bairro: b?.neighborhood ?? "",
@@ -408,7 +406,6 @@ export default function NovoMembroPage() {
     }
   }
 
-  // ========= validações =========
   function validarFormulario(): boolean {
     const errors: FieldErrors = {};
 
@@ -419,14 +416,12 @@ export default function NovoMembroPage() {
     if (!cpfDigits) errors.cpf = "Informe o CPF.";
     else if (!isValidCPF(cpfDigits)) errors.cpf = "CPF inválido.";
 
-    // endereço obrigatório
     if (!logradouro.trim()) errors.logradouro = "Informe o logradouro.";
     if (!numero.trim()) errors.numero = "Informe o número.";
     if (!bairro.trim()) errors.bairro = "Informe o bairro.";
     if (!cidade.trim()) errors.cidade = "Informe a cidade.";
     if (!uf.trim()) errors.uf = "Informe a UF.";
 
-    // telefone celular obrigatório
     const cel = onlyDigits(telefoneCelular);
     if (!cel) errors.telefoneCelular = "Informe o telefone celular.";
     else if (cel.length < 10) errors.telefoneCelular = "Telefone inválido.";
@@ -436,7 +431,6 @@ export default function NovoMembroPage() {
 
     if (!isStatusValido(status)) errors.status = "Selecione a situação (status).";
 
-    // numeroRol (opcional)
     if (numeroRol.trim()) {
       const n = Number(onlyDigits(numeroRol));
       if (!Number.isFinite(n) || n <= 0) errors.numeroRol = "Nº do rol inválido.";
@@ -454,7 +448,6 @@ export default function NovoMembroPage() {
     return true;
   }
 
-  // ========= upload foto =========
   async function handleUploadFoto(file: File) {
     await runAction({
       busySetter: setUploadingFoto,
@@ -477,7 +470,6 @@ export default function NovoMembroPage() {
     });
   }
 
-  // ========= salvar =========
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
     if (saving) return;
@@ -486,6 +478,13 @@ export default function NovoMembroPage() {
 
     if (uploadingFoto) {
       const msg = "Aguarde terminar o envio da foto antes de salvar.";
+      setErro(msg);
+      toast.error(msg);
+      return;
+    }
+
+    if (!userRole) {
+      const msg = "Aguarde o carregamento das permissões do usuário.";
       setErro(msg);
       toast.error(msg);
       return;
@@ -561,7 +560,6 @@ export default function NovoMembroPage() {
           updatedAt: now,
         };
 
-        // ✅ validação/normalização enterprise (antes de gravar)
         const vr = cleanMembroPayload(payload);
 
         if (!vr.ok) {
@@ -597,7 +595,7 @@ export default function NovoMembroPage() {
           fotoUrl: (c.fotoUrl as any) ?? payload.fotoUrl,
         };
 
-        const ref = await addDoc(collection(db, "membros"), payloadSeguro as any);
+        const ref = await addDoc(collection(db, paths.membros), payloadSeguro as any);
 
         await writeAuditLog({
           action: "create",
@@ -611,7 +609,6 @@ export default function NovoMembroPage() {
           },
         });
 
-        // ✅ navegação após salvar
         toastOk("Membro cadastrado com sucesso! Abrindo ficha…");
         setTimeout(() => router.push(`/membros/${ref.id}`), 650);
       },
@@ -656,7 +653,6 @@ export default function NovoMembroPage() {
               </div>
             ) : null}
 
-            {/* ===== CAMPOS PARA CEIA / PLANILHA ===== */}
             <Card title="Santa Ceia e Planilhas">
               <Row>
                 <Field label="Nº do rol" error={fieldErrors.numeroRol}>
@@ -967,7 +963,7 @@ export default function NovoMembroPage() {
                 </Field>
 
                 <Field label="">
-                  <div className="text-sm text-gray-500 mt-2">{/* espaço */}</div>
+                  <div className="text-sm text-gray-500 mt-2"></div>
                 </Field>
               </Row>
             </Card>
@@ -1088,11 +1084,17 @@ export default function NovoMembroPage() {
 
             <div className="flex flex-col md:flex-row gap-3">
               <button
-                disabled={saving || uploadingFoto}
+                disabled={saving || uploadingFoto || loadingRole}
                 type="submit"
                 className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60"
               >
-                {saving ? "Salvando…" : uploadingFoto ? "Aguarde upload…" : "Salvar cadastro"}
+                {saving
+                  ? "Salvando…"
+                  : uploadingFoto
+                  ? "Aguarde upload…"
+                  : loadingRole
+                  ? "Carregando permissões…"
+                  : "Salvar cadastro"}
               </button>
 
               <Link
