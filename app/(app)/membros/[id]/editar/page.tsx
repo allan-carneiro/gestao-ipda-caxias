@@ -9,9 +9,10 @@ import { useParams, useRouter } from "next/navigation";
 import { PUBLIC_ENV } from "@/src/lib/publicEnv";
 import { uploadImageToCloudinary } from "@/src/lib/cloudinary";
 import { useToast } from "@/app/components/ToastProvider";
-
-// ✅ camada enterprise (client-safe)
 import { cleanMembroPayload } from "@/src/lib/validators";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import type { UserRole } from "@/src/types/auth";
 
 type EstadoCivil =
   | "Solteiro(a)"
@@ -24,9 +25,9 @@ type Status = "Ativo" | "Inativo";
 
 type Membro = {
   nomeCompleto?: string;
-  dataNascimento?: string; // yyyy-mm-dd (ou dados antigos)
-  cpf?: string; // digits
-  rg?: string; // digits
+  dataNascimento?: string;
+  cpf?: string;
+  rg?: string;
   estadoCivil?: EstadoCivil;
   nomeConjuge?: string | null;
 
@@ -73,7 +74,6 @@ function isStatusValido(v: any): v is Status {
   return v === "Ativo" || v === "Inativo";
 }
 
-// ===== Idade (runtime) =====
 function isValidDate(d: Date) {
   return d instanceof Date && !Number.isNaN(d.getTime());
 }
@@ -132,19 +132,21 @@ export default function EditarMembroPage() {
 
   const toast = useToast();
 
+  const [loadingRole, setLoadingRole] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Mantive esses states (pra banner), mas agora também usamos Toast
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  // upload flags
   const [uploadingFoto, setUploadingFoto] = useState(false);
   const [uploadingAnexos, setUploadingAnexos] = useState(false);
 
   const isBusy = loading || saving || uploadingFoto || uploadingAnexos;
+  const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
 
   function toastErro(e: any, fallback: string) {
     const msg =
@@ -183,7 +185,6 @@ export default function EditarMembroPage() {
     }
   }
 
-  // ======= states do formulário =======
   const [nomeCompleto, setNomeCompleto] = useState("");
   const [dataNascimento, setDataNascimento] = useState("");
   const [cpf, setCpf] = useState("");
@@ -223,7 +224,6 @@ export default function EditarMembroPage() {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [anexos, setAnexos] = useState<any[]>([]);
 
-  // ========= helpers =========
   function onlyDigits(v: string) {
     return (v || "").replace(/\D/g, "");
   }
@@ -312,7 +312,7 @@ export default function EditarMembroPage() {
       setCidade(data.localidade || "");
       setUf(data.uf || "");
       toast.success("CEP preenchido automaticamente.");
-      setTimeout(() => toast.success(""), 0); // no-op (só pra evitar “loop mental”)
+      setTimeout(() => toast.success(""), 0);
     } catch (err) {
       console.error(err);
       toastErro(err, "Erro ao buscar CEP.");
@@ -360,7 +360,6 @@ export default function EditarMembroPage() {
     return true;
   }
 
-  // ========= upload =========
   async function handleUploadFoto(file: File) {
     await runAction({
       busySetter: setUploadingFoto,
@@ -405,7 +404,6 @@ export default function EditarMembroPage() {
           novos.push({ nome: file.name, url: String(url) });
         }
 
-        // ✅ importante: usa o estado mais recente (evita perder anexos)
         setAnexos((prev) => [...(prev || []), ...novos]);
       },
       success: "Anexos adicionados. Não esqueça de salvar.",
@@ -413,18 +411,40 @@ export default function EditarMembroPage() {
     });
   }
 
-  // ========= carregar membro =========
+  useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (active) setUserRole(role);
+      } catch (error) {
+        console.error(error);
+        if (active) setUserRole(null);
+      } finally {
+        if (active) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => {
     let alive = true;
 
     async function load() {
-      if (!id) return;
+      if (!id || !userRole) return;
 
       try {
         setLoading(true);
         setErro(null);
 
-        const ref = doc(db, "membros", id);
+        const ref = doc(db, paths.membros, id);
         const snap = await getDoc(ref);
 
         if (!snap.exists()) {
@@ -482,18 +502,19 @@ export default function EditarMembroPage() {
       }
     }
 
-    load();
+    if (!loadingRole && userRole) {
+      void load();
+    }
+
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, userRole, loadingRole, paths.membros]);
 
-  // ✅ idade calculada (runtime) no editar
   const idade = useMemo(() => calcularIdade(dataNascimento ?? null), [dataNascimento]);
   const idadeTxt = useMemo(() => formatarIdade(idade), [idade]);
 
-  // ========= salvar edição =========
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
     if (saving) return;
@@ -513,6 +534,8 @@ export default function EditarMembroPage() {
     await runAction({
       busySetter: setSaving,
       fn: async () => {
+        if (!userRole) throw new Error("Role do usuário não carregada.");
+
         const now = new Date().toISOString();
 
         if (!isStatusValido(status)) {
@@ -568,7 +591,6 @@ export default function EditarMembroPage() {
           updatedAt: now,
         };
 
-        // ✅ enterprise: valida/normaliza (só nos campos que o validator cobre)
         const vr = cleanMembroPayload(payload);
 
         if (!vr.ok) {
@@ -577,7 +599,6 @@ export default function EditarMembroPage() {
 
         const c = vr.value;
 
-        // ✅ merge compatível
         const payloadSeguro: Partial<Membro> = {
           ...payload,
 
@@ -602,13 +623,12 @@ export default function EditarMembroPage() {
           fotoUrl: (c.fotoUrl as any) ?? payload.fotoUrl,
         };
 
-        await updateDoc(doc(db, "membros", id), payloadSeguro as any);
+        await updateDoc(doc(db, paths.membros, id), payloadSeguro as any);
       },
       success: "Alterações salvas com sucesso!",
       errorFallback: "Erro ao salvar alterações.",
     });
 
-    // ✅ navega depois do toast
     setTimeout(() => router.push(`/membros/${id}`), 450);
   }
 
@@ -653,7 +673,7 @@ export default function EditarMembroPage() {
             </div>
           </div>
 
-          {loading ? (
+          {loading || loadingRole ? (
             <div className="mt-6 rounded-2xl bg-white p-6 shadow">Carregando...</div>
           ) : (
             <form onSubmit={salvar} className="mt-6 space-y-5">
