@@ -44,6 +44,10 @@ import {
 } from "@/src/lib/membroSearch";
 
 import { calcularIdade } from "@/src/lib/idade";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
+import { getPaths } from "@/src/lib/demo/paths";
+import type { UserRole } from "@/src/types/auth";
 
 import {
   ResponsiveContainer,
@@ -178,24 +182,24 @@ function formatRecentActivityText(item: RecentActivityItem) {
   let actionLabel = "";
 
   if (action === "mark_presence_control") {
-  actionLabel = "marcou presença na Ceia";
-} else if (action === "unmark_presence_control") {
-  actionLabel = "desmarcou presença na Ceia";
-} else if (action === "create_member") {
-  actionLabel = "criou membro";
-} else if (action === "update_member") {
-  actionLabel = "editou membro";
-} else if (action === "inactivate_member") {
-  actionLabel = "inativou membro";
-} else if (action === "reactivate_member") {
-  actionLabel = "reativou membro";
-} else if (action === "delete_member") {
-  actionLabel = "excluiu membro";
-} else if (action === "register_evangelism") {
-  actionLabel = "registrou evangelismo";
-} else {
-  actionLabel = action.replaceAll("_", " ") || "realizou uma ação";
-}
+    actionLabel = "marcou presença na Ceia";
+  } else if (action === "unmark_presence_control") {
+    actionLabel = "desmarcou presença na Ceia";
+  } else if (action === "create_member") {
+    actionLabel = "criou membro";
+  } else if (action === "update_member") {
+    actionLabel = "editou membro";
+  } else if (action === "inactivate_member") {
+    actionLabel = "inativou membro";
+  } else if (action === "reactivate_member") {
+    actionLabel = "reativou membro";
+  } else if (action === "delete_member") {
+    actionLabel = "excluiu membro";
+  } else if (action === "register_evangelism") {
+    actionLabel = "registrou evangelismo";
+  } else {
+    actionLabel = action.replaceAll("_", " ") || "realizou uma ação";
+  }
 
   if (label) {
     return `${actor} ${actionLabel} — ${label}`;
@@ -307,6 +311,8 @@ function ListBox<T extends ListItemBase>(props: {
   emptyLabel: string;
   onOpenMember: (id: string) => void;
   onEditMember: (id: string) => void;
+  canEdit?: boolean;
+  emptyEditTooltip?: string;
   badgeLabel?: string;
   getBadgeLabel?: (item: T) => string | null | undefined;
   badgeVariant?: "blue" | "gray" | "emerald" | "amber";
@@ -323,6 +329,8 @@ function ListBox<T extends ListItemBase>(props: {
     emptyLabel,
     onOpenMember,
     onEditMember,
+    canEdit = true,
+    emptyEditTooltip = "Edição indisponível para este perfil",
     badgeLabel,
     getBadgeLabel,
     badgeVariant,
@@ -498,7 +506,14 @@ function ListBox<T extends ListItemBase>(props: {
                         <button
                           type="button"
                           onClick={() => onEditMember(m.id)}
-                          className="px-3 py-2 rounded-xl bg-white border text-sm font-semibold hover:bg-gray-50"
+                          disabled={!canEdit}
+                          title={!canEdit ? emptyEditTooltip : ""}
+                          className={[
+                            "px-3 py-2 rounded-xl border text-sm font-semibold",
+                            canEdit
+                              ? "bg-white hover:bg-gray-50"
+                              : "bg-gray-100 text-gray-400 cursor-not-allowed",
+                          ].join(" ")}
                         >
                           Editar
                         </button>
@@ -850,6 +865,9 @@ export default function DashboardPage() {
   const sheetsRegistroAnual = PUBLIC_ENV.SHEETS_2_URL?.trim() || "";
 
   const { ano: anoAtual, mes: mesAtual } = useMemo(agoraAnoMes, []);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [loadingRole, setLoadingRole] = useState(true);
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
   const [erroStats, setErroStats] = useState<string | null>(null);
@@ -878,24 +896,48 @@ export default function DashboardPage() {
   const [erroModal, setErroModal] = useState<string | null>(null);
 
   const [membrosAtivos, setMembrosAtivos] = useState<SimpleMembroListItem[]>([]);
-  const [membrosInativos, setMembrosInativos] = useState<SimpleMembroListItem[]>(
-    []
-  );
+  const [membrosInativos, setMembrosInativos] = useState<SimpleMembroListItem[]>([]);
   const [presentesMes, setPresentesMes] = useState<SimpleMembroListItem[]>([]);
-  const [participantesAno, setParticipantesAno] = useState<SimpleMembroListItem[]>(
-    []
-  );
+  const [participantesAno, setParticipantesAno] = useState<SimpleMembroListItem[]>([]);
 
   const [faltantesRecorrentes, setFaltantesRecorrentes] = useState<
     CeiaFaltanteRecorrenteListItem[]
   >([]);
   const [search, setSearch] = useState("");
 
-  const fetchRecentActivity = useCallback(async (): Promise<
-    RecentActivityItem[]
-  > => {
+  const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+  const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
+  const allowEditMembers = useMemo(
+    () => canEditMembers(userRole ?? undefined) && !isDemo(userRole ?? undefined),
+    [userRole]
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (active) setUserRole(role);
+      } catch (error) {
+        console.error("Erro ao carregar role do usuário:", error);
+        if (active) setUserRole(null);
+      } finally {
+        if (active) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const fetchRecentActivity = useCallback(async (): Promise<RecentActivityItem[]> => {
     const q = query(
-      collection(db, "auditoria"),
+      collection(db, paths.auditoria),
       orderBy("createdAt", "desc"),
       limit(10)
     );
@@ -919,9 +961,11 @@ export default function DashboardPage() {
         createdAt: data.createdAt instanceof Timestamp ? data.createdAt : null,
       };
     });
-  }, []);
+  }, [paths.auditoria]);
 
   const loadRecentActivity = useCallback(async () => {
+    if (!userRole) return;
+
     try {
       setLoadingRecentActivity(true);
       setErroRecentActivity(null);
@@ -941,9 +985,11 @@ export default function DashboardPage() {
     } finally {
       setLoadingRecentActivity(false);
     }
-  }, [fetchRecentActivity]);
+  }, [fetchRecentActivity, userRole]);
 
   const loadDashboard = useCallback(async () => {
+    if (!userRole) return;
+
     try {
       setLoadingStats(true);
       setErroStats(null);
@@ -956,11 +1002,11 @@ export default function DashboardPage() {
 
       const [membros, ceiaMes, ceiaAno, ceiaRecorrentes, serie, recent] =
         await Promise.all([
-          getStatsMembros(),
-          getStatsCeiaMes(anoAtual, mesAtual),
-          getStatsCeiaAno(anoAtual),
-          getStatsCeiaFaltantesRecorrentes(),
-          getSerieCeiaUltimosMeses(anoAtual, mesAtual),
+          getStatsMembros(userRole),
+          getStatsCeiaMes(anoAtual, mesAtual, userRole),
+          getStatsCeiaAno(anoAtual, userRole),
+          getStatsCeiaFaltantesRecorrentes(userRole),
+          getSerieCeiaUltimosMeses(anoAtual, mesAtual, userRole),
           fetchRecentActivity(),
         ]);
 
@@ -1004,20 +1050,27 @@ export default function DashboardPage() {
       setLoadingSerieCeia(false);
       setLoadingRecentActivity(false);
     }
-  }, [anoAtual, mesAtual, fetchRecentActivity]);
+  }, [anoAtual, mesAtual, fetchRecentActivity, userRole]);
 
   useEffect(() => {
-    void loadDashboard();
-  }, [loadDashboard]);
+    if (!loadingRole && userRole) {
+      void loadDashboard();
+    }
+  }, [loadingRole, userRole, loadDashboard]);
 
   useEffect(() => {
-    if (pathname?.includes("/dashboard")) void loadDashboard();
-  }, [pathname, loadDashboard]);
+    if (!loadingRole && userRole && pathname?.includes("/dashboard")) {
+      void loadDashboard();
+    }
+  }, [pathname, loadDashboard, loadingRole, userRole]);
 
   useEffect(() => {
+    if (loadingRole || !userRole) return;
+
     function onFocus() {
       void loadDashboard();
     }
+
     function onVisibility() {
       if (document.visibilityState === "visible") void loadDashboard();
     }
@@ -1029,7 +1082,7 @@ export default function DashboardPage() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [loadDashboard]);
+  }, [loadDashboard, loadingRole, userRole]);
 
   function closeModal() {
     setModalOpen(false);
@@ -1049,13 +1102,12 @@ export default function DashboardPage() {
     try {
       setErroModal(null);
 
-      const ref = doc(db, "membros", id);
+      const ref = doc(db, paths.membros, id);
       const snap = await getDoc(ref);
 
       if (!snap.exists()) {
         setErroModal(
-          "Este participante não existe mais (provavelmente era cadastro de teste excluído). " +
-            "Recomendação: para manter histórico real, use sempre INATIVAR, não excluir."
+          "Este participante não existe mais (provavelmente era cadastro de teste excluído). Recomendação: para manter histórico real, use sempre INATIVAR, não excluir."
         );
         return;
       }
@@ -1073,11 +1125,14 @@ export default function DashboardPage() {
   }
 
   function editMember(id: string) {
+    if (!allowEditMembers) return;
     closeModal();
     router.push(`/membros/${id}/editar`);
   }
 
   async function openMembros(defaultTab: MembrosTab) {
+    if (!userRole) return;
+
     setModalKind("membros");
     setTabMembros(defaultTab);
     setModalOpen(true);
@@ -1090,12 +1145,12 @@ export default function DashboardPage() {
 
       if (defaultTab === "Ativo") {
         if (membrosAtivos.length === 0) {
-          const list = await listarMembrosPorStatus("Ativo");
+          const list = await listarMembrosPorStatus("Ativo", userRole);
           setMembrosAtivos(list);
         }
       } else {
         if (membrosInativos.length === 0) {
-          const list = await listarMembrosPorStatus("Inativo");
+          const list = await listarMembrosPorStatus("Inativo", userRole);
           setMembrosInativos(list);
         }
       }
@@ -1112,6 +1167,8 @@ export default function DashboardPage() {
   }
 
   async function openCeiaMesFor(ano: number, mes: number) {
+    if (!userRole) return;
+
     setModalKind("ceiaMes");
     setModalOpen(true);
     setSearch("");
@@ -1122,7 +1179,7 @@ export default function DashboardPage() {
 
     try {
       setLoadingModal(true);
-      const list = await listarPresentesCeiaMes(ano, mes);
+      const list = await listarPresentesCeiaMes(ano, mes, userRole);
       setPresentesMes(list);
     } catch (e: unknown) {
       console.error(e);
@@ -1141,6 +1198,8 @@ export default function DashboardPage() {
   }
 
   async function openCeiaAno() {
+    if (!userRole) return;
+
     setModalKind("ceiaAno");
     setModalOpen(true);
     setSearch("");
@@ -1150,7 +1209,7 @@ export default function DashboardPage() {
     try {
       setLoadingModal(true);
       if (participantesAno.length === 0) {
-        const list = await listarParticipantesCeiaAno(anoAtual);
+        const list = await listarParticipantesCeiaAno(anoAtual, userRole);
         setParticipantesAno(list);
       }
     } catch (e: unknown) {
@@ -1166,6 +1225,8 @@ export default function DashboardPage() {
   }
 
   async function openCeiaRecorrentes() {
+    if (!userRole) return;
+
     setModalKind("ceiaRecorrentes");
     setModalOpen(true);
     setSearch("");
@@ -1174,7 +1235,7 @@ export default function DashboardPage() {
 
     try {
       setLoadingModal(true);
-      const list = await listarFaltantesRecorrentesCeia();
+      const list = await listarFaltantesRecorrentesCeia(userRole);
       setFaltantesRecorrentes(list);
     } catch (e: unknown) {
       console.error(e);
@@ -1191,6 +1252,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!modalOpen) return;
     if (modalKind !== "membros") return;
+    if (!userRole) return;
 
     (async () => {
       try {
@@ -1199,12 +1261,12 @@ export default function DashboardPage() {
 
         if (tabMembros === "Ativo") {
           if (membrosAtivos.length === 0) {
-            const list = await listarMembrosPorStatus("Ativo");
+            const list = await listarMembrosPorStatus("Ativo", userRole);
             setMembrosAtivos(list);
           }
         } else {
           if (membrosInativos.length === 0) {
-            const list = await listarMembrosPorStatus("Inativo");
+            const list = await listarMembrosPorStatus("Inativo", userRole);
             setMembrosInativos(list);
           }
         }
@@ -1220,7 +1282,7 @@ export default function DashboardPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabMembros]);
+  }, [tabMembros, modalOpen, modalKind, userRole]);
 
   const modalTitle = useMemo(() => {
     if (modalKind === "membros") return "Membros";
@@ -1257,6 +1319,12 @@ export default function DashboardPage() {
           Gestão IPDA – Caxias: acesso rápido às principais rotinas.
         </p>
 
+        {demoMode ? (
+          <div className="mt-4 rounded-2xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
+            Modo demonstração — os dados exibidos são fictícios e alterações administrativas podem estar desabilitadas.
+          </div>
+        ) : null}
+
         <div className="mt-6">
           {erroStats ? (
             <div className="rounded-2xl bg-red-500/15 border border-red-400/20 p-4 text-red-100">
@@ -1267,71 +1335,71 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <StatCard
               label="Membros"
-              value={loadingStats ? "…" : stats?.membros.total ?? "—"}
+              value={loadingStats || loadingRole ? "…" : stats?.membros.total ?? "—"}
               sub={
-                loadingStats || !stats
+                loadingStats || loadingRole || !stats
                   ? "Carregando…"
                   : `${stats.membros.ativos} ativos • ${stats.membros.inativos} inativos`
               }
-              disabled={loadingStats || !stats}
-              onClick={() => openMembros("Ativo")}
+              disabled={loadingStats || loadingRole || !stats}
+              onClick={() => void openMembros("Ativo")}
             />
 
             <StatCard
               label="Ceia (mês)"
-              value={loadingStats ? "…" : stats?.ceiaMes.presentes ?? "—"}
+              value={loadingStats || loadingRole ? "…" : stats?.ceiaMes.presentes ?? "—"}
               sub={
                 stats
                   ? `Marcados em ${pad2(stats.mes)}/${stats.ano}`
                   : "Marcados no mês atual"
               }
-              disabled={loadingStats || !stats}
-              onClick={openCeiaMes}
+              disabled={loadingStats || loadingRole || !stats}
+              onClick={() => void openCeiaMes()}
             />
 
             <StatCard
               label="Ceia (ano)"
               value={
-                loadingStats ? "…" : stats?.ceiaAno.totalParticipacoes ?? "—"
+                loadingStats || loadingRole ? "…" : stats?.ceiaAno.totalParticipacoes ?? "—"
               }
               sub={stats ? `Participações em ${stats.ano}` : "Participações no ano"}
-              disabled={loadingStats || !stats}
-              onClick={openCeiaAno}
+              disabled={loadingStats || loadingRole || !stats}
+              onClick={() => void openCeiaAno()}
             />
 
             <StatCard
               label="Faltantes (Ceia)"
               value={
-                loadingStats
+                loadingStats || loadingRole
                   ? "…"
                   : stats?.ceiaRecorrentes.totalFaltantesRecorrentes ?? "—"
               }
               sub={stats ? "Sequência consecutiva (não inativa)" : "Faltantes recorrentes"}
-              disabled={loadingStats || !stats}
-              onClick={openCeiaRecorrentes}
+              disabled={loadingStats || loadingRole || !stats}
+              onClick={() => void openCeiaRecorrentes()}
             />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
             <ChartMembros
-              loading={loadingStats}
+              loading={loadingStats || loadingRole}
               stats={stats}
-              onClick={() => openMembros("Ativo")}
+              onClick={() => void openMembros("Ativo")}
             />
             <ChartMembrosPie
-              loading={loadingStats}
+              loading={loadingStats || loadingRole}
               stats={stats}
-              onClick={() => openMembros("Ativo")}
+              onClick={() => void openMembros("Ativo")}
             />
             <ChartCeia
-              loading={loadingStats}
+              loading={loadingStats || loadingRole}
               stats={stats}
-              onClick={openCeiaMes}
+              onClick={() => void openCeiaMes()}
             />
 
             <div key={serieCeiaKey}>
               <ChartCeiaLine
-                loading={loadingSerieCeia}
+                loading={loadingSerieCeia || loadingRole}
                 error={erroSerieCeia}
                 data={serieCeia}
                 onOpenMonth={openCeiaMesFor}
@@ -1385,7 +1453,13 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => void loadRecentActivity()}
-            className="px-3 py-2 rounded-xl bg-white border text-sm font-semibold hover:bg-gray-50"
+            disabled={loadingRole || !userRole}
+            className={[
+              "px-3 py-2 rounded-xl border text-sm font-semibold",
+              loadingRole || !userRole
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-white hover:bg-gray-50",
+            ].join(" ")}
           >
             Atualizar
           </button>
@@ -1396,7 +1470,7 @@ export default function DashboardPage() {
             <div className="rounded-2xl bg-red-50 border border-red-200 p-4 text-red-700">
               {erroRecentActivity}
             </div>
-          ) : loadingRecentActivity ? (
+          ) : loadingRecentActivity || loadingRole ? (
             <div className="space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="p-3 rounded-xl border bg-gray-50 animate-pulse">
@@ -1496,6 +1570,8 @@ export default function DashboardPage() {
             emptyLabel="Nenhum faltante recorrente encontrado."
             onOpenMember={(id) => void openMember(id)}
             onEditMember={editMember}
+            canEdit={allowEditMembers}
+            emptyEditTooltip="Edição indisponível para este perfil"
             getBadgeLabel={(m) => {
               const seq = Array.isArray(m.ceiaFaltasSeq) ? m.ceiaFaltasSeq : [];
               const last = seq.length
@@ -1566,6 +1642,12 @@ export default function DashboardPage() {
             }
             onOpenMember={(id) => void openMember(id)}
             onEditMember={editMember}
+            canEdit={allowEditMembers}
+            emptyEditTooltip={
+              demoMode
+                ? "Modo demonstração: edição desabilitada para esta conta"
+                : "Edição indisponível para este perfil"
+            }
             badgeLabel={
               modalKind === "membros"
                 ? tabMembros
