@@ -2,12 +2,14 @@ import {
   collection,
   documentId,
   getDocs,
-  getDocsFromServer, // ✅ FIX
+  getDocsFromServer,
   query,
   where,
-  type Query, // ✅ FIX (tipagem helper)
+  type Query,
 } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
+import type { UserRole } from "@/src/types/auth";
+import { getCeiaParticipantesPath, getPaths } from "@/src/lib/demo/paths";
 
 // ==========================
 // TIPOS (listas do modal)
@@ -15,16 +17,13 @@ import { db } from "@/src/lib/firebase";
 export type SimpleMembroListItem = {
   id: string;
   nome: string;
-  dataNascimento?: string | null; // ✅ para mostrar idade no modal
+  dataNascimento?: string | null;
+  cpf?: string | null;
 };
 
-// ✅ NOVO: tipo para faltantes recorrentes
 export type CeiaFaltanteRecorrenteListItem = SimpleMembroListItem & {
-  // compat legado
   faltasSeguidasCeia: number;
   ceiaObs?: string;
-
-  // ✅ novo padrão enterprise (para UI exibir, sem calcular)
   ceiaFaltasSeq?: string[];
   ceiaFaltasSeqLabel?: string;
 };
@@ -38,23 +37,16 @@ function sortByNome(a: SimpleMembroListItem, b: SimpleMembroListItem) {
   return a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
 }
 
-// ==========================
-// ✅ FIX: helper para preferir servidor (evita gráfico “preso” por cache)
-// ==========================
 async function getDocsPreferServer<T = any>(q: Query<T>, preferServer: boolean) {
   if (!preferServer) return getDocs(q);
 
   try {
     return await getDocsFromServer(q);
-  } catch (e) {
-    // fallback seguro caso esteja offline ou o server falhe
+  } catch {
     return getDocs(q);
   }
 }
 
-// ==========================
-// HELPERS — MEMBROS (LOOKUP)
-// ==========================
 function chunk<T>(arr: T[], size: number) {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -68,34 +60,37 @@ function safeId(v: any): string | null {
   return s;
 }
 
-/**
- * Busca membros por IDs e devolve um Map (id -> dados básicos).
- * Firestore "in" aceita no máximo 10 valores → fazemos em lotes de 10.
- */
 async function getMemberLiteMap(
-  ids: string[]
+  ids: string[],
+  role?: UserRole
 ): Promise<Map<string, SimpleMembroListItem>> {
   const clean = Array.from(new Set(ids.map(safeId).filter(Boolean))) as string[];
 
   const map = new Map<string, SimpleMembroListItem>();
   if (clean.length === 0) return map;
 
+  const paths = getPaths(role);
   const batches = chunk(clean, 10);
 
   await Promise.all(
     batches.map(async (b) => {
-      const q = query(collection(db, "membros"), where(documentId(), "in", b));
+      const q = query(
+        collection(db, paths.membros),
+        where(documentId(), "in", b)
+      );
       const snap = await getDocs(q);
 
       snap.forEach((d) => {
         const data = d.data() as any;
         const nome = normalizeNome(data?.nomeCompleto ?? data?.nome);
         const dataNascimento = (data?.dataNascimento ?? null) as string | null;
+        const cpf = (data?.cpf ?? null) as string | null;
 
         map.set(d.id, {
           id: d.id,
           nome,
           dataNascimento,
+          cpf,
         });
       });
     })
@@ -107,8 +102,9 @@ async function getMemberLiteMap(
 // ==========================
 // MEMBROS (STATS)
 // ==========================
-export async function getStatsMembros() {
-  const snap = await getDocs(collection(db, "membros"));
+export async function getStatsMembros(role?: UserRole) {
+  const paths = getPaths(role);
+  const snap = await getDocs(collection(db, paths.membros));
 
   let ativos = 0;
   let inativos = 0;
@@ -123,7 +119,6 @@ export async function getStatsMembros() {
     else semStatus++;
   });
 
-  // ✅ total deve bater com Ativos + Inativos
   const total = ativos + inativos;
 
   if (semStatus > 0) {
@@ -136,10 +131,11 @@ export async function getStatsMembros() {
 }
 
 // ==========================
-// ✅ CEIA (FALTANTES RECORRENTES)
+// CEIA (FALTANTES RECORRENTES)
 // ==========================
-export async function getStatsCeiaFaltantesRecorrentes() {
-  const ref = collection(db, "membros");
+export async function getStatsCeiaFaltantesRecorrentes(role?: UserRole) {
+  const paths = getPaths(role);
+  const ref = collection(db, paths.membros);
   const qy = query(
     ref,
     where("status", "==", "Ativo"),
@@ -164,7 +160,6 @@ function normalizeCeiaSeq(raw: any): string[] | undefined {
 
   const clean = raw.map((x) => String(x ?? "").trim()).filter(Boolean);
 
-  // remove duplicatas preservando ordem
   const uniq: string[] = [];
   const seen = new Set<string>();
   for (const k of clean) {
@@ -173,16 +168,16 @@ function normalizeCeiaSeq(raw: any): string[] | undefined {
     uniq.push(k);
   }
 
-  // ordena por mês (proteção caso venha bagunçado)
   uniq.sort((a, b) => (toMonthIndex(a) ?? 0) - (toMonthIndex(b) ?? 0));
 
   return uniq;
 }
 
-export async function listarFaltantesRecorrentesCeia(): Promise<
-  CeiaFaltanteRecorrenteListItem[]
-> {
-  const ref = collection(db, "membros");
+export async function listarFaltantesRecorrentesCeia(
+  role?: UserRole
+): Promise<CeiaFaltanteRecorrenteListItem[]> {
+  const paths = getPaths(role);
+  const ref = collection(db, paths.membros);
   const qy = query(
     ref,
     where("status", "==", "Ativo"),
@@ -206,12 +201,9 @@ export async function listarFaltantesRecorrentesCeia(): Promise<
       id: d.id,
       nome,
       dataNascimento: data?.dataNascimento ?? null,
-
-      // compat legado
+      cpf: data?.cpf ?? null,
       faltasSeguidasCeia: Number(data?.faltasSeguidasCeia ?? 0),
       ceiaObs: String(data?.ceiaObs ?? ""),
-
-      // novo padrão
       ceiaFaltasSeq,
       ceiaFaltasSeqLabel,
     };
@@ -225,9 +217,11 @@ export async function listarFaltantesRecorrentesCeia(): Promise<
 // MEMBROS (LISTAS)
 // ==========================
 export async function listarMembrosPorStatus(
-  status: "Ativo" | "Inativo"
+  status: "Ativo" | "Inativo",
+  role?: UserRole
 ): Promise<SimpleMembroListItem[]> {
-  const ref = collection(db, "membros");
+  const paths = getPaths(role);
+  const ref = collection(db, paths.membros);
   const q = query(ref, where("status", "==", status));
   const snap = await getDocs(q);
 
@@ -238,6 +232,7 @@ export async function listarMembrosPorStatus(
       id: d.id,
       nome,
       dataNascimento: data?.dataNascimento ?? null,
+      cpf: data?.cpf ?? null,
     };
   });
 
@@ -246,7 +241,7 @@ export async function listarMembrosPorStatus(
 }
 
 // ==========================
-// ✅ helpers: fallback para modais (se membro não existir mais)
+// helpers: fallback para modais
 // ==========================
 function extractMembroIdFromControleDoc(docId: string, data: any): string | null {
   const membroId = safeId(data?.membroId);
@@ -276,16 +271,22 @@ function fallbackNascimentoFromCeiaDoc(data: any): string | null {
 export async function getStatsCeiaMes(
   ano: number,
   mes: number,
-  preferServer = false // ✅ FIX
+  roleOrPreferServer?: UserRole | boolean,
+  maybePreferServer = false
 ) {
-  const ym = `${ano}-${String(mes).padStart(2, "0")}`;
+  const role =
+    typeof roleOrPreferServer === "string" ? roleOrPreferServer : undefined;
 
-  const ref = collection(db, "ceia_controle", ym, "participantes");
+  const preferServer =
+    typeof roleOrPreferServer === "boolean"
+      ? roleOrPreferServer
+      : maybePreferServer;
+
+  const ref = collection(db, getCeiaParticipantesPath(role, ano, mes));
   const qPres = query(ref, where("presente", "==", true));
 
   const snap = await getDocsPreferServer(qPres, preferServer);
 
-  // ✅ stat não depende de lookup → se presente=true, conta.
   return { presentes: snap.size };
 }
 
@@ -294,11 +295,10 @@ export async function getStatsCeiaMes(
 // ==========================
 export async function listarPresentesCeiaMes(
   ano: number,
-  mes: number
+  mes: number,
+  role?: UserRole
 ): Promise<SimpleMembroListItem[]> {
-  const ym = `${ano}-${String(mes).padStart(2, "0")}`;
-
-  const ref = collection(db, "ceia_controle", ym, "participantes");
+  const ref = collection(db, getCeiaParticipantesPath(role, ano, mes));
   const qPres = query(ref, where("presente", "==", true));
   const snap = await getDocs(qPres);
 
@@ -317,16 +317,20 @@ export async function listarPresentesCeiaMes(
         id: membroId,
         nome: fallbackNomeFromCeiaDoc(data),
         dataNascimento: fallbackNascimentoFromCeiaDoc(data),
+        cpf: data?.cpf ?? null,
       });
     }
   }
 
   const uniqueIds = Array.from(new Set(ids));
-  const memberMap = await getMemberLiteMap(uniqueIds);
+  const memberMap = await getMemberLiteMap(uniqueIds, role);
 
   const items: SimpleMembroListItem[] = [];
   for (const id of uniqueIds) {
-    items.push(memberMap.get(id) ?? fallbackById.get(id)!);
+    const fallback = fallbackById.get(id);
+    if (fallback) {
+      items.push(memberMap.get(id) ?? fallback);
+    }
   }
 
   items.sort(sortByNome);
@@ -336,11 +340,11 @@ export async function listarPresentesCeiaMes(
 // ==========================
 // CEIA — ANO (STATS)
 // ==========================
-export async function getStatsCeiaAno(ano: number) {
-  const qy = query(collection(db, "ceia_registros"), where("ano", "==", ano));
+export async function getStatsCeiaAno(ano: number, role?: UserRole) {
+  const paths = getPaths(role);
+  const qy = query(collection(db, paths.ceiaRegistros), where("ano", "==", ano));
   const snap = await getDocs(qy);
 
-  // ✅ stat não depende de lookup → se existe registro, conta.
   return { totalParticipacoes: snap.size };
 }
 
@@ -348,9 +352,11 @@ export async function getStatsCeiaAno(ano: number) {
 // CEIA — ANO (LISTA PARTICIPANTES ÚNICOS)
 // ==========================
 export async function listarParticipantesCeiaAno(
-  ano: number
+  ano: number,
+  role?: UserRole
 ): Promise<SimpleMembroListItem[]> {
-  const qy = query(collection(db, "ceia_registros"), where("ano", "==", ano));
+  const paths = getPaths(role);
+  const qy = query(collection(db, paths.ceiaRegistros), where("ano", "==", ano));
   const snap = await getDocs(qy);
 
   const ids: string[] = [];
@@ -368,16 +374,20 @@ export async function listarParticipantesCeiaAno(
         id: membroId,
         nome: fallbackNomeFromCeiaDoc(data),
         dataNascimento: fallbackNascimentoFromCeiaDoc(data),
+        cpf: data?.cpf ?? null,
       });
     }
   }
 
   const uniqueIds = Array.from(new Set(ids));
-  const memberMap = await getMemberLiteMap(uniqueIds);
+  const memberMap = await getMemberLiteMap(uniqueIds, role);
 
   const items: SimpleMembroListItem[] = [];
   for (const id of uniqueIds) {
-    items.push(memberMap.get(id) ?? fallbackById.get(id)!);
+    const fallback = fallbackById.get(id);
+    if (fallback) {
+      items.push(memberMap.get(id) ?? fallback);
+    }
   }
 
   items.sort(sortByNome);
@@ -388,8 +398,8 @@ export async function listarParticipantesCeiaAno(
 // CEIA — SÉRIE (ÚLTIMOS MESES)
 // ==========================
 export type CeiaMesSeriePoint = {
-  id: string; // "YYYY-MM"
-  label: string; // "02/2026"
+  id: string;
+  label: string;
   presentes: number;
 };
 
@@ -406,8 +416,12 @@ function addMonths(base: Date, delta: number) {
 export async function getSerieCeiaUltimosMeses(
   anoAtual: number,
   mesAtual: number,
-  meses = 12
+  roleOrMeses?: UserRole | number,
+  maybeMeses = 12
 ): Promise<CeiaMesSeriePoint[]> {
+  const role = typeof roleOrMeses === "string" ? roleOrMeses : undefined;
+  const meses = typeof roleOrMeses === "number" ? roleOrMeses : maybeMeses;
+
   const base = new Date(anoAtual, mesAtual - 1, 1);
 
   const points = Array.from({ length: meses }, (_, i) => {
@@ -421,8 +435,7 @@ export async function getSerieCeiaUltimosMeses(
 
   const results = await Promise.all(
     points.map(async (p) => {
-      // ✅ FIX: força leitura do servidor para a série (evita ponto antigo)
-      const stats = await getStatsCeiaMes(p.ano, p.mes, true);
+      const stats = await getStatsCeiaMes(p.ano, p.mes, role, true);
       return {
         id: p.id,
         label: p.label,
