@@ -16,23 +16,26 @@ import {
 } from "firebase/firestore";
 import { db, writeAuditLog } from "@/src/lib/firebase";
 import AuthGuard from "@/app/components/AuthGuard";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import type { UserRole } from "@/src/types/auth";
 
 type Status = "Ativo" | "Inativo";
 
 type Membro = {
   nomeCompleto?: string;
-  nome?: string; // antigo
+  nome?: string;
 
   telefoneCelular?: string;
-  telefone?: string; // antigo
+  telefone?: string;
   email?: string | null;
 
   status?: Status;
 
-  cpf?: string; // pode estar como digits ou já com máscara
+  cpf?: string;
   rg?: string;
 
-  dataNascimento?: string; // ISO (YYYY-MM-DD) ou BR (DD/MM/AAAA) em dados antigos
+  dataNascimento?: string;
   dataBatismo?: string | null;
 
   campo?: string;
@@ -114,24 +117,20 @@ function normalizeNomeCompleto(nome: string) {
     .join(" ");
 }
 
-// ✅ Display de data para usuário final: DD-MM-AAAA
 function formatarDataBR(v?: string | null) {
   const s = String(v ?? "").trim();
   if (!s) return "";
 
-  // ISO → YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const [y, m, d] = s.split("-");
     return `${d}-${m}-${y}`;
   }
 
-  // já está em BR (DD/MM/AAAA) — mantém
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
 
   return s;
 }
 
-// ===== Idade (runtime) =====
 function isValidDate(d: Date) {
   return d instanceof Date && !Number.isNaN(d.getTime());
 }
@@ -202,9 +201,6 @@ function buildMembroAuditSnapshot(payload: Partial<Membro>) {
   };
 }
 
-/* ============================
-   MODAL (mesmo padrão do dashboard)
-============================ */
 function Modal({
   open,
   title,
@@ -285,6 +281,9 @@ export default function VerMembroPage() {
   const idParam = params?.id;
   const memberId = Array.isArray(idParam) ? idParam[0] : idParam;
 
+  const [loadingRole, setLoadingRole] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
@@ -296,6 +295,31 @@ export default function VerMembroPage() {
   );
 
   const [actionLoading, setActionLoading] = useState(false);
+
+  const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (active) setUserRole(role);
+      } catch (error) {
+        console.error(error);
+        if (active) setUserRole(null);
+      } finally {
+        if (active) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -309,7 +333,9 @@ export default function VerMembroPage() {
           return;
         }
 
-        const ref = doc(db, "membros", memberId);
+        if (!userRole) return;
+
+        const ref = doc(db, paths.membros, memberId);
         const snap = await getDoc(ref);
 
         if (!snap.exists()) {
@@ -326,8 +352,10 @@ export default function VerMembroPage() {
       }
     }
 
-    load();
-  }, [memberId]);
+    if (!loadingRole && userRole) {
+      void load();
+    }
+  }, [memberId, userRole, loadingRole, paths.membros]);
 
   const nome = useMemo(() => {
     const raw = membro?.nomeCompleto || membro?.nome || "";
@@ -344,7 +372,6 @@ export default function VerMembroPage() {
     [membro?.endereco?.cep]
   );
 
-  // ✅ mostra “Sem status” se vier docs antigos sem status
   const statusLabel = useMemo(() => {
     const s = membro?.status;
     if (isStatusValido(s)) return s;
@@ -385,7 +412,7 @@ export default function VerMembroPage() {
         updatedAt: now,
       });
 
-      await updateDoc(doc(db, "membros", memberId), {
+      await updateDoc(doc(db, paths.membros, memberId), {
         status: novo,
         updatedAt: now,
       } as any);
@@ -423,10 +450,9 @@ export default function VerMembroPage() {
     }
   }
 
-  // ✅ checa histórico (Ceia) antes de excluir
   async function membroTemHistoricoCeia(mId: string): Promise<boolean> {
     const qy = query(
-      collection(db, "ceia_registros"),
+      collection(db, paths.ceiaRegistros),
       where("membroId", "==", mId),
       limit(1)
     );
@@ -453,7 +479,7 @@ export default function VerMembroPage() {
 
       const beforeSnapshot = buildMembroAuditSnapshot(membro);
 
-      await deleteDoc(doc(db, "membros", memberId));
+      await deleteDoc(doc(db, paths.membros, memberId));
 
       await writeAuditLog({
         action: "delete",
@@ -560,7 +586,7 @@ export default function VerMembroPage() {
               </div>
             ) : null}
 
-            {loading ? (
+            {loading || loadingRole ? (
               <p>Carregando...</p>
             ) : erro ? (
               <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-red-700">
@@ -593,7 +619,6 @@ export default function VerMembroPage() {
                     </p>
                   ) : null}
 
-                  {/* ✅ Nascimento formatado (sem repetir idade aqui) */}
                   {membro?.dataNascimento ? (
                     <p>
                       <b>Nascimento:</b> {formatarDataBR(membro.dataNascimento)}
@@ -703,7 +728,6 @@ export default function VerMembroPage() {
           </div>
         </div>
 
-        {/* MODAL */}
         <Modal open={modalOpen} title={modalTitle} onClose={closeModal}>
           {modalKind === "inativar" ? (
             <div className="space-y-4">
@@ -725,7 +749,7 @@ export default function VerMembroPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setStatus("Inativo")}
+                  onClick={() => void setStatus("Inativo")}
                   className="px-4 py-2 rounded-xl bg-amber-600 text-white font-semibold hover:bg-amber-700 disabled:opacity-60"
                   disabled={actionLoading}
                 >
@@ -752,7 +776,7 @@ export default function VerMembroPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setStatus("Ativo")}
+                  onClick={() => void setStatus("Ativo")}
                   className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-60"
                   disabled={actionLoading}
                 >
@@ -785,7 +809,7 @@ export default function VerMembroPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={excluirDefinitivo}
+                  onClick={() => void excluirDefinitivo()}
                   className="px-4 py-2 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-60"
                   disabled={actionLoading}
                 >
