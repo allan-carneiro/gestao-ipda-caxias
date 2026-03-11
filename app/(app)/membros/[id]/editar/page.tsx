@@ -12,6 +12,7 @@ import { useToast } from "@/app/components/ToastProvider";
 import { cleanMembroPayload } from "@/src/lib/validators";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
 import { getPaths } from "@/src/lib/demo/paths";
+import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
 import type { UserRole } from "@/src/types/auth";
 
 type EstadoCivil =
@@ -145,45 +146,12 @@ export default function EditarMembroPage() {
   const [uploadingFoto, setUploadingFoto] = useState(false);
   const [uploadingAnexos, setUploadingAnexos] = useState(false);
 
-  const isBusy = loading || saving || uploadingFoto || uploadingAnexos;
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
-
-  function toastErro(e: any, fallback: string) {
-    const msg =
-      typeof e?.message === "string" && e.message.trim()
-        ? e.message
-        : typeof e === "string" && e.trim()
-        ? e
-        : fallback;
-
-    const finalMsg = msg.startsWith("Erro:") ? msg : `Erro: ${msg}`;
-    toast.error(finalMsg);
-    setErro(finalMsg);
-  }
-
-  function toastOk(msg: string) {
-    toast.success(msg);
-    setSucesso(msg);
-    setTimeout(() => setSucesso(null), 1200);
-  }
-
-  async function runAction(opts: {
-    busySetter?: (v: boolean) => void;
-    fn: () => Promise<void>;
-    success?: string;
-    errorFallback: string;
-  }) {
-    try {
-      opts.busySetter?.(true);
-      await opts.fn();
-      if (opts.success) toastOk(opts.success);
-    } catch (e: any) {
-      console.error(e);
-      toastErro(e, opts.errorFallback);
-    } finally {
-      opts.busySetter?.(false);
-    }
-  }
+  const allowEditMembers = useMemo(
+    () => canEditMembers(userRole ?? undefined),
+    [userRole]
+  );
+  const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
 
   const [nomeCompleto, setNomeCompleto] = useState("");
   const [dataNascimento, setDataNascimento] = useState("");
@@ -223,6 +191,50 @@ export default function EditarMembroPage() {
 
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [anexos, setAnexos] = useState<any[]>([]);
+
+  const isBusy =
+    loading ||
+    saving ||
+    uploadingFoto ||
+    uploadingAnexos ||
+    !allowEditMembers;
+
+  function toastErro(e: any, fallback: string) {
+    const msg =
+      typeof e?.message === "string" && e.message.trim()
+        ? e.message
+        : typeof e === "string" && e.trim()
+        ? e
+        : fallback;
+
+    const finalMsg = msg.startsWith("Erro:") ? msg : `Erro: ${msg}`;
+    toast.error(finalMsg);
+    setErro(finalMsg);
+  }
+
+  function toastOk(msg: string) {
+    toast.success(msg);
+    setSucesso(msg);
+    setTimeout(() => setSucesso(null), 1200);
+  }
+
+  async function runAction(opts: {
+    busySetter?: (v: boolean) => void;
+    fn: () => Promise<void>;
+    success?: string;
+    errorFallback: string;
+  }) {
+    try {
+      opts.busySetter?.(true);
+      await opts.fn();
+      if (opts.success) toastOk(opts.success);
+    } catch (e: any) {
+      console.error(e);
+      toastErro(e, opts.errorFallback);
+    } finally {
+      opts.busySetter?.(false);
+    }
+  }
 
   function onlyDigits(v: string) {
     return (v || "").replace(/\D/g, "");
@@ -312,7 +324,6 @@ export default function EditarMembroPage() {
       setCidade(data.localidade || "");
       setUf(data.uf || "");
       toast.success("CEP preenchido automaticamente.");
-      setTimeout(() => toast.success(""), 0);
     } catch (err) {
       console.error(err);
       toastErro(err, "Erro ao buscar CEP.");
@@ -361,6 +372,8 @@ export default function EditarMembroPage() {
   }
 
   async function handleUploadFoto(file: File) {
+    if (!allowEditMembers) return;
+
     await runAction({
       busySetter: setUploadingFoto,
       fn: async () => {
@@ -383,6 +396,8 @@ export default function EditarMembroPage() {
   }
 
   async function handleUploadAnexos(files: FileList) {
+    if (!allowEditMembers) return;
+
     await runAction({
       busySetter: setUploadingAnexos,
       fn: async () => {
@@ -509,15 +524,14 @@ export default function EditarMembroPage() {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, userRole, loadingRole, paths.membros]);
+  }, [id, userRole, loadingRole, paths.membros, toast]);
 
   const idade = useMemo(() => calcularIdade(dataNascimento ?? null), [dataNascimento]);
   const idadeTxt = useMemo(() => formatarIdade(idade), [idade]);
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
-    if (saving) return;
+    if (saving || !allowEditMembers) return;
 
     clearMessages();
 
@@ -645,6 +659,12 @@ export default function EditarMembroPage() {
               </h1>
               <p className="text-gray-600 mt-1">Atualize os dados do membro.</p>
 
+              {demoMode ? (
+                <p className="text-sm text-amber-700 mt-2">
+                  Modo demonstração: edição desabilitada para esta conta.
+                </p>
+              ) : null}
+
               {allowSheetsLinks ? (
                 <p className="text-xs text-gray-500 mt-1">
                   Dica: Links do Sheets estão configurados via PUBLIC_ENV.
@@ -657,7 +677,7 @@ export default function EditarMembroPage() {
                 type="button"
                 onClick={() => router.back()}
                 className="rounded-xl bg-white px-4 py-2 shadow hover:bg-gray-50"
-                disabled={isBusy}
+                disabled={loading || saving || uploadingFoto || uploadingAnexos}
               >
                 Voltar
               </button>
@@ -665,7 +685,9 @@ export default function EditarMembroPage() {
               <Link
                 href={`/membros/${id}`}
                 className={`rounded-xl bg-white px-4 py-2 shadow hover:bg-gray-50 ${
-                  isBusy ? "pointer-events-none opacity-60" : ""
+                  loading || saving || uploadingFoto || uploadingAnexos
+                    ? "pointer-events-none opacity-60"
+                    : ""
                 }`}
               >
                 Ver
@@ -1035,7 +1057,7 @@ export default function EditarMembroPage() {
                   <input
                     type="file"
                     accept="image/*"
-                    disabled={saving || uploadingFoto}
+                    disabled={isBusy}
                     onChange={async (e) => {
                       const input = e.currentTarget;
                       const file = input.files?.[0];
@@ -1074,7 +1096,7 @@ export default function EditarMembroPage() {
 
                           <button
                             type="button"
-                            disabled={saving || uploadingAnexos}
+                            disabled={isBusy}
                             onClick={() =>
                               setAnexos((prev) =>
                                 (prev || []).filter((_: any, idx: number) => idx !== i)
@@ -1098,7 +1120,7 @@ export default function EditarMembroPage() {
                   <input
                     type="file"
                     multiple
-                    disabled={saving || uploadingAnexos}
+                    disabled={isBusy}
                     onChange={async (e) => {
                       const input = e.currentTarget;
                       const files = input.files;
@@ -1124,7 +1146,7 @@ export default function EditarMembroPage() {
 
               <div className="flex flex-col md:flex-row gap-3">
                 <button
-                  disabled={saving || uploadingFoto || uploadingAnexos}
+                  disabled={isBusy}
                   type="submit"
                   className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60"
                 >
@@ -1137,7 +1159,7 @@ export default function EditarMembroPage() {
 
                 <button
                   type="button"
-                  disabled={saving || uploadingFoto || uploadingAnexos}
+                  disabled={loading || saving || uploadingFoto || uploadingAnexos}
                   onClick={() => router.push(`/membros/${id}`)}
                   className="bg-white border px-6 py-3 rounded-xl font-semibold hover:bg-gray-50 text-center disabled:opacity-60"
                 >
