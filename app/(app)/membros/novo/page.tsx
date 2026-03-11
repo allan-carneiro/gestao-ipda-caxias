@@ -11,6 +11,7 @@ import { useToast } from "@/app/components/ToastProvider";
 import { cleanMembroPayload } from "@/src/lib/validators";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
 import { getPaths } from "@/src/lib/demo/paths";
+import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
 import type { UserRole } from "@/src/types/auth";
 
 type EstadoCivil =
@@ -221,8 +222,15 @@ export default function NovoMembroPage() {
   const [anexos, setAnexos] = useState<any[]>([]);
   const [uploadingFoto, setUploadingFoto] = useState(false);
 
-  const isBusy = saving || uploadingFoto || loadingRole;
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+  const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
+  const allowCreateMembers = useMemo(
+    () => canEditMembers(userRole ?? undefined) && !isDemo(userRole ?? undefined),
+    [userRole]
+  );
+
+  const isBusy = saving || uploadingFoto || loadingRole;
+  const formDisabled = isBusy || !allowCreateMembers;
 
   useEffect(() => {
     let active = true;
@@ -426,8 +434,9 @@ export default function NovoMembroPage() {
     if (!cel) errors.telefoneCelular = "Informe o telefone celular.";
     else if (cel.length < 10) errors.telefoneCelular = "Telefone inválido.";
 
-    if (!cargoEclesiastico.trim())
+    if (!cargoEclesiastico.trim()) {
       errors.cargoEclesiastico = "Selecione o cargo eclesiástico.";
+    }
 
     if (!isStatusValido(status)) errors.status = "Selecione a situação (status).";
 
@@ -449,6 +458,15 @@ export default function NovoMembroPage() {
   }
 
   async function handleUploadFoto(file: File) {
+    if (!allowCreateMembers) {
+      const msg = demoMode
+        ? "Modo demonstração: upload de foto desabilitado para esta conta."
+        : "Você não tem permissão para cadastrar membros.";
+      setErro(msg);
+      toast.error(msg);
+      return;
+    }
+
     await runAction({
       busySetter: setUploadingFoto,
       fn: async () => {
@@ -483,8 +501,17 @@ export default function NovoMembroPage() {
       return;
     }
 
-    if (!userRole) {
+    if (loadingRole) {
       const msg = "Aguarde o carregamento das permissões do usuário.";
+      setErro(msg);
+      toast.error(msg);
+      return;
+    }
+
+    if (!allowCreateMembers) {
+      const msg = demoMode
+        ? "Modo demonstração: cadastro de membro desabilitado para esta conta."
+        : "Você não tem permissão para cadastrar membros.";
       setErro(msg);
       toast.error(msg);
       return;
@@ -503,8 +530,8 @@ export default function NovoMembroPage() {
           setFieldErrors((p) => ({ ...p, status: "Selecione a situação (status)." }));
           throw new Error("Revise os campos destacados antes de salvar.");
         }
-        const statusSeguro: Status = status;
 
+        const statusSeguro: Status = status;
         const nomeSeguro = normalizeNomeCompleto(nomeCompleto);
 
         const payload: Membro = {
@@ -552,9 +579,7 @@ export default function NovoMembroPage() {
 
           numeroRol: numeroRol.trim() ? Number(onlyDigits(numeroRol)) : null,
           ipdaPastor: ipdaPastor.trim() || null,
-          telCarta: (telCarta || "").trim()
-            ? (telCarta as "Tel." | "Carta")
-            : null,
+          telCarta: (telCarta || "").trim() ? (telCarta as "Tel." | "Carta") : null,
 
           createdAt: now,
           updatedAt: now,
@@ -606,6 +631,8 @@ export default function NovoMembroPage() {
           after: buildMembroAuditSnapshot(payloadSeguro),
           metadata: {
             origem: "app/membros/novo",
+            role: userRole ?? null,
+            dataRoot: paths.membros,
           },
         });
 
@@ -640,15 +667,28 @@ export default function NovoMembroPage() {
             </Link>
           </div>
 
+          {demoMode ? (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
+              <strong>Modo demonstração:</strong> cadastro de membros desabilitado para
+              esta conta.
+            </div>
+          ) : null}
+
+          {!loadingRole && !demoMode && !allowCreateMembers ? (
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+              Você não tem permissão para cadastrar membros.
+            </div>
+          ) : null}
+
           <form onSubmit={salvar} className="mt-6 space-y-5">
             {sucesso ? (
-              <div className="rounded-2xl bg-green-50 border border-green-200 p-4 text-green-800">
+              <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-green-800">
                 {sucesso}
               </div>
             ) : null}
 
             {erro ? (
-              <div className="rounded-2xl bg-red-50 border border-red-200 p-4 text-red-700">
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
                 {erro}
               </div>
             ) : null}
@@ -662,7 +702,7 @@ export default function NovoMembroPage() {
                     className={inputClass(!!fieldErrors.numeroRol)}
                     inputMode="numeric"
                     placeholder="Ex.: 391"
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -671,7 +711,7 @@ export default function NovoMembroPage() {
                     value={ipdaPastor}
                     onChange={(e) => setIpdaPastor(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   >
                     {IPDA_PASTOR_OPCOES.map((o) => (
                       <option key={o} value={o}>
@@ -686,7 +726,7 @@ export default function NovoMembroPage() {
                     value={telCarta}
                     onChange={(e) => setTelCarta(e.target.value as TelCarta)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   >
                     <option value="">—</option>
                     <option value="Tel.">Tel.</option>
@@ -703,7 +743,7 @@ export default function NovoMembroPage() {
                     value={nomeCompleto}
                     onChange={(e) => setNomeCompleto(e.target.value)}
                     className={inputClass(!!fieldErrors.nomeCompleto)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -713,7 +753,7 @@ export default function NovoMembroPage() {
                     value={dataNascimento}
                     onChange={(e) => setDataNascimento(e.target.value)}
                     className={inputClass(!!fieldErrors.dataNascimento)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                   <p className="mt-2 text-xs text-gray-600">
                     Idade (automática):{" "}
@@ -728,7 +768,7 @@ export default function NovoMembroPage() {
                     className={inputClass(!!fieldErrors.cpf)}
                     inputMode="numeric"
                     placeholder="000.000.000-00"
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
               </Row>
@@ -739,7 +779,7 @@ export default function NovoMembroPage() {
                     value={rg}
                     onChange={(e) => setRg(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -748,7 +788,7 @@ export default function NovoMembroPage() {
                     value={estadoCivil}
                     onChange={(e) => setEstadoCivil(e.target.value as EstadoCivil)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   >
                     <option>Solteiro(a)</option>
                     <option>Casado(a)</option>
@@ -763,7 +803,7 @@ export default function NovoMembroPage() {
                     value={nomeConjuge}
                     onChange={(e) => setNomeConjuge(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
               </Row>
@@ -778,7 +818,7 @@ export default function NovoMembroPage() {
                     className={inputClass(!!fieldErrors.telefoneCelular)}
                     inputMode="numeric"
                     placeholder="(21) 90000-0000"
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -789,7 +829,7 @@ export default function NovoMembroPage() {
                     className={inputClass(false)}
                     inputMode="numeric"
                     placeholder="(21) 0000-0000"
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -800,7 +840,7 @@ export default function NovoMembroPage() {
                     className={inputClass(false)}
                     type="email"
                     placeholder="exemplo@dominio.com"
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
               </Row>
@@ -813,7 +853,7 @@ export default function NovoMembroPage() {
                     value={logradouro}
                     onChange={(e) => setLogradouro(e.target.value)}
                     className={inputClass(!!fieldErrors.logradouro)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -822,7 +862,7 @@ export default function NovoMembroPage() {
                     value={numero}
                     onChange={(e) => setNumero(e.target.value)}
                     className={inputClass(!!fieldErrors.numero)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -831,7 +871,7 @@ export default function NovoMembroPage() {
                     value={complemento}
                     onChange={(e) => setComplemento(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
               </Row>
@@ -842,7 +882,7 @@ export default function NovoMembroPage() {
                     value={lote}
                     onChange={(e) => setLote(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -851,7 +891,7 @@ export default function NovoMembroPage() {
                     value={quadra}
                     onChange={(e) => setQuadra(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -860,7 +900,7 @@ export default function NovoMembroPage() {
                     value={bairro}
                     onChange={(e) => setBairro(e.target.value)}
                     className={inputClass(!!fieldErrors.bairro)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
               </Row>
@@ -871,7 +911,7 @@ export default function NovoMembroPage() {
                     value={cidade}
                     onChange={(e) => setCidade(e.target.value)}
                     className={inputClass(!!fieldErrors.cidade)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -881,7 +921,7 @@ export default function NovoMembroPage() {
                     onChange={(e) => setUf(e.target.value)}
                     className={inputClass(!!fieldErrors.uf)}
                     placeholder="Ex.: RJ"
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -897,7 +937,7 @@ export default function NovoMembroPage() {
                     className={inputClass(false)}
                     inputMode="numeric"
                     placeholder="00000-000"
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
               </Row>
@@ -911,7 +951,7 @@ export default function NovoMembroPage() {
                     value={dataBatismo}
                     onChange={(e) => setDataBatismo(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -920,7 +960,7 @@ export default function NovoMembroPage() {
                     value={campo}
                     onChange={(e) => setCampo(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   >
                     <option>Duque de Caxias</option>
                     <option>Rio de Janeiro</option>
@@ -932,7 +972,7 @@ export default function NovoMembroPage() {
                     value={congregacao}
                     onChange={(e) => setCongregacao(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
               </Row>
@@ -943,7 +983,7 @@ export default function NovoMembroPage() {
                     value={pastor}
                     onChange={(e) => setPastor(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -952,7 +992,7 @@ export default function NovoMembroPage() {
                     value={cargoEclesiastico}
                     onChange={(e) => setCargoEclesiastico(e.target.value)}
                     className={inputClass(!!fieldErrors.cargoEclesiastico)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   >
                     {CARGOS.map((c) => (
                       <option key={c} value={c}>
@@ -963,7 +1003,7 @@ export default function NovoMembroPage() {
                 </Field>
 
                 <Field label="">
-                  <div className="text-sm text-gray-500 mt-2"></div>
+                  <div className="mt-2 text-sm text-gray-500"></div>
                 </Field>
               </Row>
             </Card>
@@ -975,7 +1015,7 @@ export default function NovoMembroPage() {
                     value={naturalidade}
                     onChange={(e) => setNaturalidade(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -984,7 +1024,7 @@ export default function NovoMembroPage() {
                     value={escolaridade}
                     onChange={(e) => setEscolaridade(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -993,7 +1033,7 @@ export default function NovoMembroPage() {
                     value={profissao}
                     onChange={(e) => setProfissao(e.target.value)}
                     className={inputClass(false)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
               </Row>
@@ -1005,7 +1045,7 @@ export default function NovoMembroPage() {
                     onChange={(e) => setFilhosQtd(e.target.value)}
                     className={inputClass(false)}
                     inputMode="numeric"
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -1015,7 +1055,7 @@ export default function NovoMembroPage() {
                     onChange={(e) => setNetosQtd(e.target.value)}
                     className={inputClass(false)}
                     inputMode="numeric"
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -1024,7 +1064,7 @@ export default function NovoMembroPage() {
                     value={status}
                     onChange={(e) => setStatus(e.target.value as Status)}
                     className={inputClass(!!fieldErrors.status)}
-                    disabled={isBusy}
+                    disabled={formDisabled}
                   >
                     <option value="Ativo">Ativo</option>
                     <option value="Inativo">Inativo</option>
@@ -1036,7 +1076,7 @@ export default function NovoMembroPage() {
             <Card title="Foto">
               {fotoUrl && (
                 <div className="mb-4">
-                  <p className="text-sm text-gray-600 mb-2">Prévia da foto:</p>
+                  <p className="mb-2 text-sm text-gray-600">Prévia da foto:</p>
                   <img
                     src={fotoUrl}
                     alt="Foto do membro"
@@ -1048,7 +1088,7 @@ export default function NovoMembroPage() {
               <input
                 type="file"
                 accept="image/*"
-                disabled={uploadingFoto || saving}
+                disabled={formDisabled}
                 onChange={async (e) => {
                   const input = e.currentTarget;
                   const file = input.files?.[0];
@@ -1064,10 +1104,10 @@ export default function NovoMembroPage() {
 
                   await handleUploadFoto(file);
                 }}
-                className="block w-full border rounded-xl p-2"
+                className="block w-full rounded-xl border p-2"
               />
 
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="mt-2 text-xs text-gray-500">
                 {uploadingFoto ? "Enviando foto…" : "Formatos: JPG/PNG. Envio imediato."}
               </p>
             </Card>
@@ -1078,15 +1118,15 @@ export default function NovoMembroPage() {
                 onChange={(e) => setObservacoes(e.target.value)}
                 className={textareaClass(false)}
                 placeholder="Observações gerais sobre o membro…"
-                disabled={isBusy}
+                disabled={formDisabled}
               />
             </Card>
 
-            <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex flex-col gap-3 md:flex-row">
               <button
-                disabled={saving || uploadingFoto || loadingRole}
+                disabled={formDisabled}
                 type="submit"
-                className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60"
+                className="rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
               >
                 {saving
                   ? "Salvando…"
@@ -1094,12 +1134,14 @@ export default function NovoMembroPage() {
                   ? "Aguarde upload…"
                   : loadingRole
                   ? "Carregando permissões…"
+                  : !allowCreateMembers
+                  ? "Cadastro desabilitado"
                   : "Salvar cadastro"}
               </button>
 
               <Link
                 href="/membros"
-                className={`bg-white border px-6 py-3 rounded-xl font-semibold hover:bg-gray-50 text-center ${
+                className={`rounded-xl border bg-white px-6 py-3 text-center font-semibold hover:bg-gray-50 ${
                   isBusy ? "pointer-events-none opacity-60" : ""
                 }`}
               >
@@ -1147,7 +1189,7 @@ function textareaClass(isError: boolean) {
 
 function Card(props: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-3xl shadow p-5 md:p-7">
+    <div className="rounded-3xl bg-white p-5 shadow md:p-7">
       <h2 className="text-lg font-bold text-gray-900">{props.title}</h2>
       <div className="mt-4 space-y-4">{props.children}</div>
     </div>
@@ -1155,7 +1197,7 @@ function Card(props: { title: string; children: React.ReactNode }) {
 }
 
 function Row(props: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{props.children}</div>;
+  return <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{props.children}</div>;
 }
 
 function Field(props: { label: string; children: React.ReactNode; error?: string }) {
