@@ -6,6 +6,9 @@ import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
 import { listarControleCeia, marcarPresencaNoControle } from "@/src/lib/ceia";
 import { useToast } from "@/app/components/ToastProvider";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import type { UserRole } from "@/src/types/auth";
 
 type MembroListItem = {
   id: string;
@@ -32,6 +35,8 @@ export default function SantaCeiaControlePage() {
   }
 
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [loadingRole, setLoadingRole] = useState(true);
 
   const now = new Date();
   const [year, setYear] = useState<number>(now.getFullYear());
@@ -43,6 +48,8 @@ export default function SantaCeiaControlePage() {
   );
 
   const [qText, setQText] = useState("");
+
+  const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
 
   const membrosFiltrados = useMemo(() => {
     const t = qText.trim().toLowerCase();
@@ -56,15 +63,45 @@ export default function SantaCeiaControlePage() {
     });
   }, [membros, qText]);
 
-  // Carrega membros (uma vez)
+  useEffect(() => {
+    let alive = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (!alive) return;
+        setUserRole(role);
+      } catch (e) {
+        console.error(e);
+        if (!alive) return;
+        setUserRole(null);
+      } finally {
+        if (alive) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Carrega membros
   useEffect(() => {
     let alive = true;
 
     async function loadMembros() {
+      if (!userRole) return;
+
       try {
         setLoading(true);
 
-        const q = query(collection(db, "membros"), orderBy("nomeCompleto", "asc"));
+        const q = query(
+          collection(db, paths.membros),
+          orderBy("nomeCompleto", "asc")
+        );
         const snap = await getDocs(q);
 
         const list: MembroListItem[] = [];
@@ -88,18 +125,21 @@ export default function SantaCeiaControlePage() {
       }
     }
 
-    loadMembros();
+    void loadMembros();
+
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [userRole, paths.membros]);
 
-  // Carrega participantes marcados (sempre que mudar ano/mês)
+  // Carrega participantes marcados
   useEffect(() => {
     let alive = true;
 
     async function loadParticipantes() {
+      if (!userRole) return;
+
       try {
         const lista = await listarControleCeia(year, month);
         const set = new Set(lista.filter((p) => p.presente).map((p) => p.membroId));
@@ -113,18 +153,18 @@ export default function SantaCeiaControlePage() {
       }
     }
 
-    loadParticipantes();
+    void loadParticipantes();
+
     return () => {
       alive = false;
     };
-  }, [year, month]);
+  }, [year, month, userRole]);
 
   async function toggleParticipou(m: MembroListItem) {
     try {
       const ja = participantesSet.has(m.id);
       const novo = new Set(participantesSet);
 
-      // otimista na UI
       if (ja) novo.delete(m.id);
       else novo.add(m.id);
 
@@ -232,7 +272,7 @@ export default function SantaCeiaControlePage() {
       </div>
 
       <div className="bg-white rounded-3xl shadow p-5 md:p-7">
-        {loading ? (
+        {loading || loadingRole ? (
           <p>Carregando membros…</p>
         ) : (
           <div className="space-y-2">
