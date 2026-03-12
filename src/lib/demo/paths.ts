@@ -5,7 +5,7 @@ function isDemo(role?: UserRole) {
 }
 
 export function getDataRoot(role?: UserRole) {
-  return isDemo(role) ? "demo_data" : "app_data/main";
+  return isDemo(role) ? "demo_data/demo" : "app_data/main";
 }
 
 export function getCollectionPath(
