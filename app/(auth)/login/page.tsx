@@ -10,6 +10,9 @@ import {
 import { auth } from "../../../src/lib/firebase";
 import { useRouter } from "next/navigation";
 
+const DEMO_EMAIL = "demo@gestao-ipda.com";
+const DEMO_PASSWORD = "GestaoDemo2026!";
+
 export default function LoginPage() {
   const router = useRouter();
 
@@ -25,8 +28,9 @@ export default function LoginPage() {
 
   const [loadingLogin, setLoadingLogin] = useState(false);
   const [loadingReset, setLoadingReset] = useState(false);
+  const [loadingDemo, setLoadingDemo] = useState(false);
 
-  const loading = loadingLogin || loadingReset;
+  const loading = loadingLogin || loadingReset || loadingDemo;
 
   useEffect(() => {
     setMounted(true);
@@ -96,6 +100,36 @@ export default function LoginPage() {
     }
   };
 
+  const handleFillDemo = () => {
+    if (loading) return;
+    clearMsgs();
+    setEmail(DEMO_EMAIL);
+    setPassword(DEMO_PASSWORD);
+    setSuccess("Credenciais de demonstração preenchidas.");
+  };
+
+  const handleLoginDemo = async () => {
+    if (loading) return;
+
+    clearMsgs();
+
+    try {
+      setLoadingDemo(true);
+      setEmail(DEMO_EMAIL);
+      setPassword(DEMO_PASSWORD);
+
+      await signInWithEmailAndPassword(auth, DEMO_EMAIL, DEMO_PASSWORD);
+      router.push("/dashboard");
+    } catch (err) {
+      console.error(err);
+      setError(
+        "Não foi possível entrar no modo DEMO. Verifique se a conta demo está criada no Firebase Auth."
+      );
+    } finally {
+      setLoadingDemo(false);
+    }
+  };
+
   return (
     <>
       <AppBackground />
@@ -119,7 +153,14 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Mensagens com aria-live (acessibilidade) */}
+          <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
+            <p className="font-semibold">Modo demonstração disponível</p>
+            <p className="mt-1 text-amber-100/90">
+              Entre com uma conta demo para visualizar o sistema com dados
+              fictícios e alterações desabilitadas.
+            </p>
+          </div>
+
           <div aria-live="polite" aria-atomic="true" className="mb-4 space-y-3">
             {error ? (
               <p className="text-red-100 bg-red-500/20 border border-red-400/30 rounded-xl px-3 py-2">
@@ -132,6 +173,40 @@ export default function LoginPage() {
                 {success}
               </p>
             ) : null}
+          </div>
+
+          <div className="mb-4 grid grid-cols-1 gap-2">
+            <button
+              type="button"
+              onClick={handleLoginDemo}
+              disabled={loading}
+              className={[
+                "w-full rounded-2xl font-semibold py-3",
+                "text-slate-900 bg-amber-300",
+                "transition duration-200",
+                "hover:bg-amber-200 active:scale-[0.99]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200",
+                "disabled:opacity-70 disabled:cursor-not-allowed",
+              ].join(" ")}
+            >
+              {loadingDemo ? "Entrando na DEMO..." : "Entrar no modo DEMO"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleFillDemo}
+              disabled={loading}
+              className={[
+                "w-full rounded-2xl font-medium py-2.5",
+                "text-white/90 bg-white/10 border border-white/20",
+                "transition duration-200",
+                "hover:bg-white/15",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300",
+                "disabled:opacity-70 disabled:cursor-not-allowed",
+              ].join(" ")}
+            >
+              Preencher credenciais demo
+            </button>
           </div>
 
           <label className="block text-white/80 text-sm mb-1" htmlFor="email">
@@ -157,7 +232,6 @@ export default function LoginPage() {
               required
             />
 
-            {/* brilho sutil no foco */}
             <span
               aria-hidden="true"
               className={[
@@ -257,7 +331,6 @@ export default function LoginPage() {
               "overflow-hidden",
             ].join(" ")}
           >
-            {/* glow premium */}
             <span
               aria-hidden="true"
               className={[
