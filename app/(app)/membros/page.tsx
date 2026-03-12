@@ -14,6 +14,7 @@ import { db } from "@/src/lib/firebase";
 import { useToast } from "@/app/components/ToastProvider";
 import { normalizeText, onlyDigits } from "@/src/lib/membroSearch";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
 import { getPaths } from "@/src/lib/demo/paths";
 import type { UserRole } from "@/src/types/auth";
 
@@ -222,6 +223,11 @@ export default function MembrosPage() {
 
   const actionLoading = modalMembroId ? !!rowLoading[modalMembroId] : false;
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+  const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
+  const allowEdit = useMemo(
+    () => canEditMembers(userRole ?? undefined) && !isDemo(userRole ?? undefined),
+    [userRole]
+  );
 
   useEffect(() => {
     let active = true;
@@ -410,6 +416,15 @@ export default function MembrosPage() {
   }, [membros]);
 
   function openModal(kind: "inativar" | "ativar", m: Membro) {
+    if (!allowEdit) {
+      toast.error(
+        demoMode
+          ? "Modo demonstração: alterações de membros estão desabilitadas para esta conta."
+          : "Você não tem permissão para alterar membros."
+      );
+      return;
+    }
+
     setModalKind(kind);
     setModalMembroId(m.id);
     setModalNome(m.nomeCompleto || m.nome || "(Sem nome)");
@@ -424,6 +439,15 @@ export default function MembrosPage() {
 
   async function setStatus(novo: Status) {
     if (!modalMembroId) return;
+
+    if (!allowEdit) {
+      toast.error(
+        demoMode
+          ? "Modo demonstração: alterações de membros estão desabilitadas para esta conta."
+          : "Você não tem permissão para alterar membros."
+      );
+      return;
+    }
 
     const id = modalMembroId;
 
@@ -475,13 +499,39 @@ export default function MembrosPage() {
           </p>
         </div>
 
-        <Link
-          href="/membros/novo"
-          className="bg-blue-600 text-white px-4 py-2 rounded-xl font-semibold hover:bg-blue-700"
-        >
-          + Cadastrar membro
-        </Link>
+        <div className="flex flex-col items-end gap-2">
+          <Link
+            href="/membros/novo"
+            className={`px-4 py-2 rounded-xl font-semibold ${
+              allowEdit
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-gray-200 text-gray-500 pointer-events-none"
+            }`}
+            aria-disabled={!allowEdit}
+            title={
+              !allowEdit
+                ? demoMode
+                  ? "Modo demonstração: cadastro desabilitado"
+                  : "Você não tem permissão para cadastrar membros"
+                : ""
+            }
+          >
+            + Cadastrar membro
+          </Link>
+
+          {demoMode ? (
+            <p className="text-xs text-amber-700">
+              Modo demonstração: cadastro e edição desabilitados.
+            </p>
+          ) : null}
+        </div>
       </div>
+
+      {!loadingRole && !demoMode && !allowEdit ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+          Você não tem permissão para alterar membros.
+        </div>
+      ) : null}
 
       <div className="bg-white rounded-3xl shadow p-4 md:p-5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -624,8 +674,20 @@ export default function MembrosPage() {
                 </Link>
 
                 <Link
-                  href={`/membros/${m.id}/editar`}
-                  className="px-4 py-2 rounded-xl bg-white border font-semibold hover:bg-gray-50"
+                  href={allowEdit ? `/membros/${m.id}/editar` : "#"}
+                  aria-disabled={!allowEdit}
+                  title={
+                    !allowEdit
+                      ? demoMode
+                        ? "Modo demonstração: edição desabilitada"
+                        : "Você não tem permissão para editar membros"
+                      : ""
+                  }
+                  className={`px-4 py-2 rounded-xl font-semibold border ${
+                    allowEdit
+                      ? "bg-white hover:bg-gray-50"
+                      : "bg-gray-100 text-gray-400 pointer-events-none"
+                  }`}
                 >
                   Editar
                 </Link>
@@ -633,18 +695,32 @@ export default function MembrosPage() {
                 {s === "Ativo" ? (
                   <button
                     type="button"
-                    disabled={isRowBusy}
+                    disabled={isRowBusy || !allowEdit}
                     onClick={() => openModal("inativar", m)}
-                    className="px-4 py-2 rounded-xl bg-amber-600 text-white font-semibold hover:bg-amber-700 disabled:opacity-60"
+                    title={
+                      !allowEdit
+                        ? demoMode
+                          ? "Modo demonstração: alteração desabilitada"
+                          : "Você não tem permissão para alterar membros"
+                        : ""
+                    }
+                    className="px-4 py-2 rounded-xl bg-amber-600 text-white font-semibold hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {isRowBusy ? "Aguarde…" : "Inativar"}
                   </button>
                 ) : (
                   <button
                     type="button"
-                    disabled={isRowBusy}
+                    disabled={isRowBusy || !allowEdit}
                     onClick={() => openModal("ativar", m)}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-60"
+                    title={
+                      !allowEdit
+                        ? demoMode
+                          ? "Modo demonstração: alteração desabilitada"
+                          : "Você não tem permissão para alterar membros"
+                        : ""
+                    }
+                    className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {isRowBusy ? "Aguarde…" : "Ativar"}
                   </button>
@@ -678,7 +754,7 @@ export default function MembrosPage() {
                 type="button"
                 onClick={() => void setStatus("Inativo")}
                 className="px-4 py-2 rounded-xl bg-amber-600 text-white font-semibold hover:bg-amber-700 disabled:opacity-60"
-                disabled={actionLoading}
+                disabled={actionLoading || !allowEdit}
               >
                 {actionLoading ? "Inativando..." : "Confirmar"}
               </button>
@@ -705,7 +781,7 @@ export default function MembrosPage() {
                 type="button"
                 onClick={() => void setStatus("Ativo")}
                 className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-60"
-                disabled={actionLoading}
+                disabled={actionLoading || !allowEdit}
               >
                 {actionLoading ? "Ativando..." : "Confirmar"}
               </button>
