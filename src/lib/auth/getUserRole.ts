@@ -1,17 +1,25 @@
 import { getAuth } from "firebase/auth";
-import type { UserRole } from "../../types/auth";
-import { isValidRole } from "./roles";
+import type { UserRole } from "@/src/types/auth";
+
+function isValidRole(value: unknown): value is UserRole {
+  return (
+    value === "admin" ||
+    value === "secretaria" ||
+    value === "pastor" ||
+    value === "demo"
+  );
+}
 
 export async function getUserRoleFromToken(): Promise<UserRole | null> {
   const auth = getAuth();
-  const currentUser = auth.currentUser;
+  const user = auth.currentUser;
 
-  if (!currentUser) return null;
+  if (!user) return null;
 
-  const tokenResult = await currentUser.getIdTokenResult(true);
-  const role = tokenResult.claims.role;
+  const tokenResult = await user.getIdTokenResult(true);
+  const role = tokenResult.claims?.role;
 
-  if (typeof role === "string" && isValidRole(role)) {
+  if (isValidRole(role)) {
     return role;
   }
 

@@ -1281,8 +1281,7 @@ export default function DashboardPage() {
         setLoadingModal(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabMembros, modalOpen, modalKind, userRole]);
+  }, [tabMembros, modalOpen, modalKind, userRole, membrosAtivos.length, membrosInativos.length]);
 
   const modalTitle = useMemo(() => {
     if (modalKind === "membros") return "Membros";
@@ -1571,7 +1570,11 @@ export default function DashboardPage() {
             onOpenMember={(id) => void openMember(id)}
             onEditMember={editMember}
             canEdit={allowEditMembers}
-            emptyEditTooltip="Edição indisponível para este perfil"
+            emptyEditTooltip={
+              demoMode
+                ? "Modo demonstração: edição desabilitada para esta conta"
+                : "Edição indisponível para este perfil"
+            }
             getBadgeLabel={(m) => {
               const seq = Array.isArray(m.ceiaFaltasSeq) ? m.ceiaFaltasSeq : [];
               const last = seq.length
