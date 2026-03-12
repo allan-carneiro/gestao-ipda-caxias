@@ -5,7 +5,8 @@ function isValidRole(value: unknown): value is UserRole {
   return (
     value === "admin" ||
     value === "secretaria" ||
-    value === "pastor" ||
+    value === "lider" ||
+    value === "consulta" ||
     value === "demo"
   );
 }
