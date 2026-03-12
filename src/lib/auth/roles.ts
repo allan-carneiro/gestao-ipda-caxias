@@ -1,4 +1,4 @@
-import type { UserRole } from "@/types/auth";
+import type { UserRole } from "../../types/auth";
 
 export const ROLES: Record<string, UserRole> = {
   ADMIN: "admin",
@@ -8,6 +8,14 @@ export const ROLES: Record<string, UserRole> = {
   DEMO: "demo",
 } as const;
 
-export function isValidRole(role: string): role is UserRole {
-  return ["admin", "secretaria", "lider", "consulta", "demo"].includes(role);
+const VALID_ROLES: UserRole[] = [
+  "admin",
+  "secretaria",
+  "lider",
+  "consulta",
+  "demo",
+];
+
+export function isValidRole(role: unknown): role is UserRole {
+  return typeof role === "string" && VALID_ROLES.includes(role as UserRole);
 }
