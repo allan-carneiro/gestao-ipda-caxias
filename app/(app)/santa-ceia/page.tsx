@@ -8,6 +8,7 @@ import { db, writeAuditLog } from "@/src/lib/firebase";
 import AuthGuard from "@/app/components/AuthGuard";
 import { useToast } from "@/app/components/ToastProvider";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
 import { getPaths } from "@/src/lib/demo/paths";
 import type { UserRole } from "@/src/types/auth";
 
@@ -177,6 +178,11 @@ export default function SantaCeiaPage() {
   const togglingRegistroRef = useRef<Set<string>>(new Set());
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+  const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
+  const allowWriteCeia = useMemo(
+    () => canEditMembers(userRole ?? undefined) && !isDemo(userRole ?? undefined),
+    [userRole]
+  );
 
   function toastErro(e: any, fallback: string) {
     const msg =
@@ -186,6 +192,21 @@ export default function SantaCeiaPage() {
         ? e
         : fallback;
     toast.error(msg.startsWith("Erro:") ? msg : `Erro: ${msg}`);
+  }
+
+  function ensureCanWriteCeia() {
+    if (loadingRole) {
+      throw new Error("Aguarde o carregamento das permissões do usuário.");
+    }
+
+    if (!allowWriteCeia) {
+      if (demoMode) {
+        throw new Error(
+          "Modo demonstração: alterações da Santa Ceia estão desabilitadas para esta conta."
+        );
+      }
+      throw new Error("Você não tem permissão para alterar dados da Santa Ceia.");
+    }
   }
 
   async function runAction(opts: {
@@ -398,6 +419,13 @@ export default function SantaCeiaPage() {
   async function toggleControle(membroIdRaw: string) {
     if (isBusy) return;
 
+    try {
+      ensureCanWriteCeia();
+    } catch (e: any) {
+      toastErro(e, "Alteração não permitida.");
+      return;
+    }
+
     let membroId = "";
     try {
       membroId = assertMembroId(membroIdRaw);
@@ -442,6 +470,8 @@ export default function SantaCeiaPage() {
           nome,
           presente: !ja,
           origem: "app/santa-ceia",
+          role: userRole ?? null,
+          dataRoot: paths.ceiaControle,
         },
       });
 
@@ -459,6 +489,13 @@ export default function SantaCeiaPage() {
 
   async function toggleRegistro(membroIdRaw: string) {
     if (isBusy) return;
+
+    try {
+      ensureCanWriteCeia();
+    } catch (e: any) {
+      toastErro(e, "Alteração não permitida.");
+      return;
+    }
 
     let membroId = "";
     try {
@@ -498,6 +535,8 @@ export default function SantaCeiaPage() {
               membroId,
               nome,
               origem: "app/santa-ceia",
+              role: userRole ?? null,
+              dataRoot: paths.ceiaRegistros,
             },
           });
 
@@ -624,6 +663,13 @@ export default function SantaCeiaPage() {
   async function finalizarMes() {
     if (isBusy) return;
 
+    try {
+      ensureCanWriteCeia();
+    } catch (e: any) {
+      toastErro(e, "Alteração não permitida.");
+      return;
+    }
+
     const ok = confirm(
       `Finalizar a Santa Ceia de ${nomeMes(mes)} (${pad2(
         mes
@@ -648,6 +694,7 @@ export default function SantaCeiaPage() {
             ym: ym(),
             total: res.total,
             origem: "app/santa-ceia",
+            role: userRole ?? null,
           },
         });
 
@@ -664,6 +711,13 @@ export default function SantaCeiaPage() {
 
   async function handleDesmarcarTodosControle() {
     if (isBusy) return;
+
+    try {
+      ensureCanWriteCeia();
+    } catch (e: any) {
+      toastErro(e, "Alteração não permitida.");
+      return;
+    }
 
     const ok = confirm(
       `Desmarcar TODAS as presenças do Controle em ${nomeMes(mes)} (${pad2(
@@ -689,6 +743,8 @@ export default function SantaCeiaPage() {
             ym: ym(),
             totalRemovido: res.total,
             origem: "app/santa-ceia",
+            role: userRole ?? null,
+            dataRoot: paths.ceiaControle,
           },
         });
 
@@ -702,6 +758,13 @@ export default function SantaCeiaPage() {
 
   async function syncRegistro() {
     if (aba !== "registro" || isBusy) return;
+
+    try {
+      ensureCanWriteCeia();
+    } catch (e: any) {
+      toastErro(e, "Alteração não permitida.");
+      return;
+    }
 
     const ok = confirm(
       `Sincronizar o REGISTRO ANUAL do Sheets para o sistema?\n\nAno: ${ano}\nIsso pode atualizar dados no Firestore.`
@@ -724,6 +787,8 @@ export default function SantaCeiaPage() {
             gravados: r.gravados,
             ignorados: r.ignorados,
             origem: "app/santa-ceia",
+            role: userRole ?? null,
+            dataRoot: paths.ceiaRegistros,
           },
         });
 
@@ -738,6 +803,13 @@ export default function SantaCeiaPage() {
 
   async function syncControle() {
     if (aba !== "controle" || isBusy) return;
+
+    try {
+      ensureCanWriteCeia();
+    } catch (e: any) {
+      toastErro(e, "Alteração não permitida.");
+      return;
+    }
 
     const ok = confirm(
       `Sincronizar o CONTROLE do mês do Sheets para o sistema?\n\nMês/Ano: ${pad2(
@@ -764,6 +836,8 @@ export default function SantaCeiaPage() {
             marcados: r.marcados,
             ignorados: r.ignorados,
             origem: "app/santa-ceia",
+            role: userRole ?? null,
+            dataRoot: paths.ceiaControle,
           },
         });
 
@@ -795,6 +869,19 @@ export default function SantaCeiaPage() {
             ← Voltar ao painel
           </Link>
         </div>
+
+        {demoMode ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
+            <strong>Modo demonstração:</strong> alterações da Santa Ceia estão
+            desabilitadas para esta conta.
+          </div>
+        ) : null}
+
+        {!loadingRole && !demoMode && !allowWriteCeia ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+            Você não tem permissão para alterar dados da Santa Ceia.
+          </div>
+        ) : null}
 
         <div className="bg-white rounded-2xl shadow p-4 flex gap-4 items-end flex-wrap">
           <div>
@@ -908,10 +995,21 @@ export default function SantaCeiaPage() {
                     <button
                       key={m.id}
                       onClick={onClick}
-                      disabled={isBusy}
+                      disabled={isBusy || !allowWriteCeia}
                       className={`text-left border rounded-xl px-3 py-3 hover:bg-gray-50 flex items-center justify-between gap-2 ${
                         marcado ? "bg-green-50 border-green-300" : "bg-white"
-                      } ${isBusy ? "opacity-60 cursor-not-allowed" : ""}`}
+                      } ${
+                        isBusy || !allowWriteCeia
+                          ? "opacity-60 cursor-not-allowed"
+                          : ""
+                      }`}
+                      title={
+                        !allowWriteCeia
+                          ? demoMode
+                            ? "Modo demonstração: alteração desabilitada"
+                            : "Você não tem permissão para alterar"
+                          : ""
+                      }
                     >
                       <span className="font-medium">
                         {(m.numeroRol ? `${m.numeroRol} — ` : "") + m.nome}
@@ -973,10 +1071,19 @@ export default function SantaCeiaPage() {
                   <>
                     <button
                       onClick={finalizarMes}
-                      disabled={isBusy}
+                      disabled={isBusy || !allowWriteCeia}
                       className={`px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 ${
-                        isBusy ? "opacity-60 cursor-not-allowed" : ""
+                        isBusy || !allowWriteCeia
+                          ? "opacity-60 cursor-not-allowed"
+                          : ""
                       }`}
+                      title={
+                        !allowWriteCeia
+                          ? demoMode
+                            ? "Modo demonstração: ação desabilitada"
+                            : "Você não tem permissão para esta ação"
+                          : ""
+                      }
                     >
                       {finalizando
                         ? "Finalizando…"
@@ -986,10 +1093,19 @@ export default function SantaCeiaPage() {
                     <button
                       type="button"
                       onClick={handleDesmarcarTodosControle}
-                      disabled={isBusy}
+                      disabled={isBusy || !allowWriteCeia}
                       className={`px-4 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 ${
-                        isBusy ? "opacity-60 cursor-not-allowed" : ""
+                        isBusy || !allowWriteCeia
+                          ? "opacity-60 cursor-not-allowed"
+                          : ""
                       }`}
+                      title={
+                        !allowWriteCeia
+                          ? demoMode
+                            ? "Modo demonstração: ação desabilitada"
+                            : "Você não tem permissão para esta ação"
+                          : ""
+                      }
                     >
                       {desmarcando
                         ? "Desmarcando…"
@@ -1000,13 +1116,20 @@ export default function SantaCeiaPage() {
 
                 <button
                   type="button"
-                  disabled={aba !== "registro" || isBusy}
+                  disabled={aba !== "registro" || isBusy || !allowWriteCeia}
                   onClick={syncRegistro}
                   className={`px-4 py-2 rounded-xl border ${
-                    aba === "registro"
+                    aba === "registro" && allowWriteCeia
                       ? "bg-white hover:bg-gray-50"
                       : "bg-gray-100 text-gray-400 cursor-not-allowed"
                   } ${isBusy ? "opacity-60 cursor-not-allowed" : ""}`}
+                  title={
+                    !allowWriteCeia
+                      ? demoMode
+                        ? "Modo demonstração: sincronização desabilitada"
+                        : "Você não tem permissão para esta ação"
+                      : ""
+                  }
                 >
                   {syncingRegistro
                     ? "Sincronizando…"
@@ -1015,13 +1138,20 @@ export default function SantaCeiaPage() {
 
                 <button
                   type="button"
-                  disabled={aba !== "controle" || isBusy}
+                  disabled={aba !== "controle" || isBusy || !allowWriteCeia}
                   onClick={syncControle}
                   className={`px-4 py-2 rounded-xl border ${
-                    aba === "controle"
+                    aba === "controle" && allowWriteCeia
                       ? "bg-white hover:bg-gray-50"
                       : "bg-gray-100 text-gray-400 cursor-not-allowed"
                   } ${isBusy ? "opacity-60 cursor-not-allowed" : ""}`}
+                  title={
+                    !allowWriteCeia
+                      ? demoMode
+                        ? "Modo demonstração: sincronização desabilitada"
+                        : "Você não tem permissão para esta ação"
+                      : ""
+                  }
                 >
                   {syncingControle
                     ? "Sincronizando…"
