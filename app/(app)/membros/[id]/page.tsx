@@ -299,7 +299,9 @@ export default function VerMembroPage() {
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
   const allowEditMembers = useMemo(
-    () => canEditMembers(userRole ?? undefined),
+    () =>
+      canEditMembers(userRole ?? undefined) &&
+      !isDemo(userRole ?? undefined),
     [userRole]
   );
   const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
@@ -697,7 +699,15 @@ export default function VerMembroPage() {
 
                 <div className="mt-6 flex flex-col md:flex-row gap-3">
                   <Link
-                    href={editarHref}
+                    href={allowEditMembers ? editarHref : "#"}
+                    aria-disabled={!allowEditMembers}
+                    title={
+                      !allowEditMembers
+                        ? demoMode
+                          ? "Modo demonstração: edição desabilitada"
+                          : "Você não tem permissão para editar membros"
+                        : ""
+                    }
                     className={[
                       "px-6 py-3 rounded-xl font-semibold text-center",
                       allowEditMembers
@@ -713,7 +723,14 @@ export default function VerMembroPage() {
                       type="button"
                       onClick={() => openModal("inativar")}
                       disabled={!allowEditMembers}
-                      className="bg-amber-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-amber-700 disabled:opacity-60"
+                      title={
+                        !allowEditMembers
+                          ? demoMode
+                            ? "Modo demonstração: alteração desabilitada"
+                            : "Você não tem permissão para alterar membros"
+                          : ""
+                      }
+                      className="bg-amber-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       Inativar
                     </button>
@@ -722,7 +739,14 @@ export default function VerMembroPage() {
                       type="button"
                       onClick={() => openModal("ativar")}
                       disabled={!allowEditMembers}
-                      className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-emerald-700 disabled:opacity-60"
+                      title={
+                        !allowEditMembers
+                          ? demoMode
+                            ? "Modo demonstração: alteração desabilitada"
+                            : "Você não tem permissão para alterar membros"
+                          : ""
+                      }
+                      className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       Ativar
                     </button>
@@ -732,7 +756,14 @@ export default function VerMembroPage() {
                     type="button"
                     onClick={() => openModal("excluir")}
                     disabled={!allowEditMembers}
-                    className="bg-red-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-red-700 disabled:opacity-60"
+                    title={
+                      !allowEditMembers
+                        ? demoMode
+                          ? "Modo demonstração: exclusão desabilitada"
+                          : "Você não tem permissão para excluir membros"
+                        : ""
+                    }
+                    className="bg-red-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Excluir definitivo
                   </button>
