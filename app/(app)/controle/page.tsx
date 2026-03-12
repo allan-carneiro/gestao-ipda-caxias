@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { listarControleCeia, marcarPresencaNoControle } from "@/src/lib/ceia";
 import { useToast } from "@/app/components/ToastProvider";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
 import { getPaths } from "@/src/lib/demo/paths";
 import type { UserRole } from "@/src/types/auth";
 
@@ -50,6 +51,11 @@ export default function SantaCeiaControlePage() {
   const [qText, setQText] = useState("");
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+  const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
+  const allowWriteControle = useMemo(
+    () => canEditMembers(userRole ?? undefined) && !isDemo(userRole ?? undefined),
+    [userRole]
+  );
 
   const membrosFiltrados = useMemo(() => {
     const t = qText.trim().toLowerCase();
@@ -163,6 +169,15 @@ export default function SantaCeiaControlePage() {
   async function toggleParticipou(m: MembroListItem) {
     if (loading || loadingRole || !userRole) return;
 
+    if (!allowWriteControle) {
+      toast.error(
+        demoMode
+          ? "Modo demonstração: alterações do controle ao vivo estão desabilitadas para esta conta."
+          : "Você não tem permissão para alterar o controle ao vivo."
+      );
+      return;
+    }
+
     try {
       const ja = participantesSet.has(m.id);
       const novo = new Set(participantesSet);
@@ -216,6 +231,19 @@ export default function SantaCeiaControlePage() {
           </Link>
         </div>
       </div>
+
+      {demoMode ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
+          <strong>Modo demonstração:</strong> alterações do controle ao vivo estão
+          desabilitadas para esta conta.
+        </div>
+      ) : null}
+
+      {!loadingRole && !demoMode && !allowWriteControle ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+          Você não tem permissão para alterar o controle ao vivo.
+        </div>
+      ) : null}
 
       <div className="bg-white rounded-3xl shadow p-5 md:p-7">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -288,12 +316,23 @@ export default function SantaCeiaControlePage() {
                   key={m.id}
                   type="button"
                   onClick={() => toggleParticipou(m)}
-                  disabled={loading || loadingRole}
+                  disabled={loading || loadingRole || !allowWriteControle}
+                  title={
+                    !allowWriteControle
+                      ? demoMode
+                        ? "Modo demonstração: alteração desabilitada"
+                        : "Você não tem permissão para alterar"
+                      : ""
+                  }
                   className={`w-full flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left hover:bg-gray-50 transition ${
                     marcado
                       ? "border-green-300 bg-green-50"
                       : "border-gray-200 bg-white"
-                  } ${loading || loadingRole ? "opacity-60 cursor-not-allowed" : ""}`}
+                  } ${
+                    loading || loadingRole || !allowWriteControle
+                      ? "opacity-60 cursor-not-allowed"
+                      : ""
+                  }`}
                 >
                   <div>
                     <p className="font-semibold text-gray-900">
