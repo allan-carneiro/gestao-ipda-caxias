@@ -5,6 +5,9 @@ import Link from "next/link";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { useToast } from "@/app/components/ToastProvider";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import type { UserRole } from "@/src/types/auth";
 
 type Membro = {
   id: string;
@@ -79,19 +82,50 @@ export default function ListaImpressaoPage() {
   }
 
   const [loading, setLoading] = useState(true);
+  const [loadingRole, setLoadingRole] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   const [membros, setMembros] = useState<Membro[]>([]);
   const [soAtivos, setSoAtivos] = useState(true);
   const [busca, setBusca] = useState("");
 
+  const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (!alive) return;
+        setUserRole(role);
+      } catch (e) {
+        console.error(e);
+        if (!alive) return;
+        setUserRole(null);
+      } finally {
+        if (alive) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   useEffect(() => {
     let alive = true;
 
     async function load() {
+      if (!userRole) return;
+
       try {
         setLoading(true);
 
-        const q = query(collection(db, "membros"), orderBy("nomeCompleto", "asc"));
+        const q = query(collection(db, paths.membros), orderBy("nomeCompleto", "asc"));
         const snap = await getDocs(q);
 
         const arr: Membro[] = snap.docs.map((d) => ({
@@ -108,12 +142,15 @@ export default function ListaImpressaoPage() {
       }
     }
 
-    load();
+    if (!loadingRole && userRole) {
+      void load();
+    }
+
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadingRole, userRole, paths.membros]);
 
   const filtrados = useMemo(() => {
     const b = busca.trim().toLowerCase();
@@ -170,6 +207,7 @@ export default function ListaImpressaoPage() {
             onChange={(e) => setBusca(e.target.value)}
             placeholder="Buscar por nome, telefone ou endereço..."
             className="w-full md:max-w-md px-4 py-3 border rounded-xl"
+            disabled={loading || loadingRole}
           />
 
           <label className="flex items-center gap-2 text-sm text-gray-700">
@@ -177,6 +215,7 @@ export default function ListaImpressaoPage() {
               type="checkbox"
               checked={soAtivos}
               onChange={(e) => setSoAtivos(e.target.checked)}
+              disabled={loading || loadingRole}
             />
             Mostrar somente Ativos
           </label>
@@ -186,7 +225,7 @@ export default function ListaImpressaoPage() {
           </div>
         </div>
 
-        {loading ? (
+        {loading || loadingRole ? (
           <div className="mt-4 text-gray-600">Carregando...</div>
         ) : (
           <div className="mt-4 overflow-x-auto">
