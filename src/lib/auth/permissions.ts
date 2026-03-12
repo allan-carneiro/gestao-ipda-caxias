@@ -36,6 +36,10 @@ export function canEditMembers(role?: UserRole) {
   return role === "admin" || role === "secretaria";
 }
 
+export function canCreateMembers(role?: UserRole) {
+  return role === "admin" || role === "secretaria";
+}
+
 export function canToggleMemberStatus(role?: UserRole) {
   return role === "admin" || role === "secretaria";
 }
@@ -57,5 +61,25 @@ export function canViewAudit(role?: UserRole) {
 }
 
 export function canExportReports(role?: UserRole) {
+  return role === "admin" || role === "secretaria" || role === "lider" || role === "demo";
+}
+
+export function canViewEvangelismo(role?: UserRole) {
+  return !!role;
+}
+
+export function canCreateEvangelismo(role?: UserRole) {
   return role === "admin" || role === "secretaria" || role === "lider";
+}
+
+export function canEditEvangelismo(role?: UserRole) {
+  return role === "admin" || role === "secretaria" || role === "lider";
+}
+
+export function canDeleteEvangelismo(role?: UserRole) {
+  return role === "admin" || role === "secretaria";
+}
+
+export function canUseDemoWriteActions(role?: UserRole) {
+  return !isDemo(role);
 }

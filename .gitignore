@@ -1,10 +1,8 @@
-# See https://help.github.com/articles/ignoring-files/
-
 # =========================
 # DEPENDENCIES
 # =========================
-/node_modules
-/.pnp
+node_modules/
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -15,18 +13,19 @@
 # =========================
 # NEXT.JS
 # =========================
-/.next
-/out
+.next/
+out/
 
 # =========================
 # BUILD
 # =========================
-/build
+build/
+dist/
 
 # =========================
 # TESTS
 # =========================
-/coverage
+coverage/
 
 # =========================
 # ENVIRONMENT VARIABLES
@@ -42,7 +41,10 @@
 # FIREBASE / KEYS
 # =========================
 serviceAccountKey.json
-*.firebase.json
+*serviceAccount*.json
+firebase-admin*.json
+firebase-debug.log
+.firestore/
 
 # =========================
 # VERCEL
@@ -61,6 +63,7 @@ yarn-error.log*
 # SYSTEM
 # =========================
 .DS_Store
+Thumbs.db
 *.pem
 
 # =========================

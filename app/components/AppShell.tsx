@@ -4,9 +4,34 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import LoaderOverlay from "@/app/components/LoaderOverlay";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { isDemo } from "@/src/lib/auth/permissions";
+import type { UserRole } from "@/src/types/auth";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function DemoBanner() {
+  return (
+    <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 shadow-sm">
+      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-wide">
+            Ambiente de Demonstração
+          </p>
+          <p className="text-sm">
+            Você está visualizando <span className="font-semibold">dados fictícios</span>.
+            Alterações de cadastro, edição e escrita estão desabilitadas nesta conta.
+          </p>
+        </div>
+
+        <div className="text-xs font-medium text-amber-700">
+          Modo DEMO ativo
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -16,14 +41,36 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [loggingOut, setLoggingOut] = useState(false);
   const [navigating, setNavigating] = useState(false);
 
-  // Drawer mobile
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const [loadingRole, setLoadingRole] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   const lastPathRef = useRef(pathname);
 
-  // Quando a rota mudar:
-  // - fecha overlay de navegação
-  // - fecha drawer mobile
+  useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (active) setUserRole(role);
+      } catch (error) {
+        console.error(error);
+        if (active) setUserRole(null);
+      } finally {
+        if (active) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (lastPathRef.current !== pathname) {
       lastPathRef.current = pathname;
@@ -35,7 +82,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [pathname]);
 
-  // Trava o scroll do body quando o drawer estiver aberto
   useEffect(() => {
     if (!mobileOpen) return;
 
@@ -47,7 +93,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [mobileOpen]);
 
-  // Fechar drawer com ESC
   useEffect(() => {
     if (!mobileOpen) return;
 
@@ -59,7 +104,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileOpen]);
 
-  // Navegação com overlay (para Sidebar usar)
   function go(href: string) {
     if (pathname === href) {
       setMobileOpen(false);
@@ -69,11 +113,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     requestAnimationFrame(() => router.push(href));
   }
 
-  // Logout: deixa o Sidebar executar e só nos avisa
   async function beginLogoutOverlay() {
     if (loggingOut) return;
     setLoggingOut(true);
-    await sleep(16); // 1 frame pro overlay aparecer
+    await sleep(16);
   }
 
   const showOverlay = useMemo(
@@ -82,13 +125,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   const overlayText = loggingOut ? "Saindo..." : "Carregando...";
+  const demoMode = useMemo(
+    () => !loadingRole && isDemo(userRole ?? undefined),
+    [loadingRole, userRole]
+  );
 
   return (
     <>
       <LoaderOverlay show={showOverlay} text={overlayText} />
 
       <div className="min-h-screen bg-gray-100">
-        {/* ================= DESKTOP (>= md) ================= */}
         <div className="hidden md:flex min-h-screen">
           <aside className="w-64 shrink-0 bg-white border-r">
             <Sidebar
@@ -97,12 +143,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             />
           </aside>
 
-          <main className="flex-1 min-w-0 p-8">{children}</main>
+          <main className="flex-1 min-w-0 p-8">
+            {demoMode ? <DemoBanner /> : null}
+            {children}
+          </main>
         </div>
 
-        {/* ================= MOBILE (< md) ================= */}
         <div className="md:hidden min-h-screen">
-          {/* Topbar */}
           <header className="sticky top-0 z-40 flex items-center gap-3 bg-white px-4 py-3 shadow-sm">
             <button
               type="button"
@@ -125,9 +172,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          <main className="min-w-0 p-4">{children}</main>
+          <main className="min-w-0 p-4">
+            {demoMode ? <DemoBanner /> : null}
+            {children}
+          </main>
 
-          {/* Overlay drawer */}
           <button
             type="button"
             aria-label="Fechar menu"
@@ -138,7 +187,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             ].join(" ")}
           />
 
-          {/* Drawer */}
           <div
             id="mobile-drawer"
             className={[

@@ -7,6 +7,7 @@ import { db } from "@/src/lib/firebase";
 import { useToast } from "@/app/components/ToastProvider";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
 import { getPaths } from "@/src/lib/demo/paths";
+import { isDemo } from "@/src/lib/auth/permissions";
 import type { UserRole } from "@/src/types/auth";
 
 type Membro = {
@@ -90,6 +91,10 @@ export default function ListaImpressaoPage() {
   const [busca, setBusca] = useState("");
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+  const demoMode = useMemo(
+    () => !loadingRole && isDemo(userRole ?? undefined),
+    [loadingRole, userRole]
+  );
 
   useEffect(() => {
     let alive = true;
@@ -164,9 +169,7 @@ export default function ListaImpressaoPage() {
           onlyDigits(m.telefoneCelular || "") +
           onlyDigits(m.telefoneResidencial || "");
         const end = formatEndereco(m).toLowerCase();
-        return (
-          nome.includes(b) || tel.includes(onlyDigits(b)) || end.includes(b)
-        );
+        return nome.includes(b) || tel.includes(onlyDigits(b)) || end.includes(b);
       });
   }, [membros, soAtivos, busca]);
 
@@ -177,7 +180,7 @@ export default function ListaImpressaoPage() {
           <h1 className="text-2xl md:text-3xl font-bold text-blue-700">
             Lista para impressão
           </h1>
-          <p className="text-gray-600">Nome + telefone + endereço.</p>
+          <p className="text-gray-600 mt-1">Nome + telefone + endereço.</p>
         </div>
 
         <div className="flex gap-2">
@@ -199,6 +202,13 @@ export default function ListaImpressaoPage() {
           </button>
         </div>
       </div>
+
+      {demoMode ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 no-print">
+          <strong>Modo demonstração:</strong> esta lista está usando dados fictícios
+          da DEMO.
+        </div>
+      ) : null}
 
       <div className="bg-white rounded-3xl shadow p-5 md:p-7">
         <div className="flex flex-col md:flex-row gap-3 items-start md:items-center no-print">

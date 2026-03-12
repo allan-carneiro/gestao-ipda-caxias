@@ -1,16 +1,21 @@
 import type { UserRole } from "../../types/auth";
 
-function getEnv(role?: UserRole) {
-  return role === "demo" ? "demo_data" : "app_data";
+function isDemo(role?: UserRole) {
+  return role === "demo";
 }
 
 export function getDataRoot(role?: UserRole) {
-  return `${getEnv(role)}/main`;
+  return isDemo(role) ? "demo_data" : "app_data/main";
 }
 
 export function getCollectionPath(
   role: UserRole | undefined,
-  collectionName: "membros" | "ceia_registros" | "auditoria" | "ceia_controle"
+  collectionName:
+    | "membros"
+    | "ceia_registros"
+    | "auditoria"
+    | "ceia_controle"
+    | "evangelismos"
 ) {
   return `${getDataRoot(role)}/${collectionName}`;
 }
@@ -24,6 +29,7 @@ export function getPaths(role?: UserRole) {
     ceiaRegistros: `${root}/ceia_registros`,
     auditoria: `${root}/auditoria`,
     ceiaControle: `${root}/ceia_controle`,
+    evangelismos: `${root}/evangelismos`,
   };
 }
 

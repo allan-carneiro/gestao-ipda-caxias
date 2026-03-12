@@ -7,6 +7,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
 import { getPaths } from "@/src/lib/demo/paths";
+import { isDemo } from "@/src/lib/auth/permissions";
 import type { UserRole } from "@/src/types/auth";
 
 type Membro = {
@@ -76,6 +77,10 @@ export default function AniversariantesPage() {
   const [mesSelecionado, setMesSelecionado] = useState<number>(mesAtual);
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+  const demoMode = useMemo(
+    () => !loadingRole && isDemo(userRole ?? undefined),
+    [loadingRole, userRole]
+  );
 
   useEffect(() => {
     let alive = true;
@@ -179,6 +184,12 @@ export default function AniversariantesPage() {
               </button>
             </div>
           </div>
+
+          {demoMode ? (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 no-print">
+              <strong>Modo demonstração:</strong> esta lista de aniversariantes está usando dados fictícios da DEMO.
+            </div>
+          ) : null}
 
           {erro ? (
             <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">

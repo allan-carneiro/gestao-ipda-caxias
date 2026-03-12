@@ -2,7 +2,11 @@
 
 import { usePathname } from "next/navigation";
 import { signOut } from "firebase/auth";
+import { useEffect, useMemo, useState } from "react";
 import { auth } from "@/src/lib/firebase";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { isDemo } from "@/src/lib/auth/permissions";
+import type { UserRole } from "@/src/types/auth";
 
 type Item = { href: string; label: string; icon: string };
 
@@ -15,15 +19,43 @@ const ITEMS: Item[] = [
   { href: "/dashboard", label: "Dashboard", icon: "🏠" },
   { href: "/membros", label: "Membros", icon: "👥" },
   { href: "/membros/novo", label: "Novo membro", icon: "➕" },
-
-  // ⭐ NOVO MÓDULO
   { href: "/evangelismo", label: "Evangelismo", icon: "📖" },
-
   { href: "/relatorios", label: "Relatórios", icon: "📊" },
 ];
 
 export default function Sidebar({ onNavigate, onLogoutStart }: SidebarProps) {
   const pathname = usePathname();
+
+  const [loadingRole, setLoadingRole] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (active) setUserRole(role);
+      } catch (error) {
+        console.error(error);
+        if (active) setUserRole(null);
+      } finally {
+        if (active) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const demoMode = useMemo(
+    () => !loadingRole && isDemo(userRole ?? undefined),
+    [loadingRole, userRole]
+  );
 
   function isActive(href: string) {
     return pathname === href || pathname.startsWith(href + "/");
@@ -42,15 +74,29 @@ export default function Sidebar({ onNavigate, onLogoutStart }: SidebarProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* HEADER */}
       <div className="px-5 py-5 border-b">
-        <div className="text-lg font-extrabold text-blue-700 leading-tight">
-          Gestão IPDA
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-lg font-extrabold text-blue-700 leading-tight">
+              Gestão IPDA
+            </div>
+            <div className="text-sm text-gray-500">Caxias</div>
+          </div>
+
+          {demoMode ? (
+            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700">
+              Demo
+            </span>
+          ) : null}
         </div>
-        <div className="text-sm text-gray-500">Caxias</div>
+
+        {demoMode ? (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Ambiente demonstrativo com dados fictícios e edição desabilitada.
+          </div>
+        ) : null}
       </div>
 
-      {/* NAV */}
       <nav className="p-3 space-y-1 flex-1">
         {ITEMS.map((it) => {
           const active = isActive(it.href);
@@ -74,7 +120,6 @@ export default function Sidebar({ onNavigate, onLogoutStart }: SidebarProps) {
         })}
       </nav>
 
-      {/* FOOTER */}
       <div className="p-3 border-t">
         <button
           type="button"

@@ -9,6 +9,9 @@ import {
   listarEvangelismos,
   type Evangelismo,
 } from "@/src/lib/evangelismo";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { isDemo } from "@/src/lib/auth/permissions";
+import type { UserRole } from "@/src/types/auth";
 
 type FieldErrors = Record<string, string>;
 
@@ -45,6 +48,9 @@ function textareaClass(isError: boolean) {
 export default function EvangelismoPage() {
   const toast = useToast();
 
+  const [loadingRole, setLoadingRole] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -64,6 +70,36 @@ export default function EvangelismoPage() {
   const [almasSeReconciliaram, setAlmasSeReconciliaram] = useState("");
 
   const [evangelismos, setEvangelismos] = useState<Evangelismo[]>([]);
+
+  const demoMode = useMemo(
+    () => !loadingRole && isDemo(userRole ?? undefined),
+    [loadingRole, userRole]
+  );
+
+  const formDisabled = saving || loadingRole || demoMode;
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (active) setUserRole(role);
+      } catch (error) {
+        console.error(error);
+        if (active) setUserRole(null);
+      } finally {
+        if (active) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function clearMessages() {
     setErro(null);
@@ -110,7 +146,7 @@ export default function EvangelismoPage() {
   }
 
   useEffect(() => {
-    carregar({ silent: true });
+    void carregar({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -173,6 +209,21 @@ export default function EvangelismoPage() {
 
     clearMessages();
     clearFieldErrors();
+
+    if (loadingRole) {
+      const msg = "Aguarde o carregamento das permissões.";
+      setErro(msg);
+      toast.error(msg);
+      return;
+    }
+
+    if (demoMode) {
+      const msg =
+        "Modo demonstração: o registro de evangelismo está desabilitado para esta conta.";
+      setErro(msg);
+      toast.error(msg);
+      return;
+    }
 
     const ok = validarFormulario();
     if (!ok) return;
@@ -438,6 +489,12 @@ export default function EvangelismoPage() {
             </Link>
           </div>
 
+          {demoMode ? (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
+              <strong>Modo demonstração:</strong> o registro de novos evangelismos está desabilitado para esta conta. Você ainda pode consultar os dados fictícios e exportar a planilha.
+            </div>
+          ) : null}
+
           <form onSubmit={salvar} className="mt-6 space-y-5">
             {sucesso ? (
               <div className="rounded-2xl bg-green-50 border border-green-200 p-4 text-green-800">
@@ -459,7 +516,7 @@ export default function EvangelismoPage() {
                     value={dataEvangelismo}
                     onChange={(e) => setDataEvangelismo(e.target.value)}
                     className={inputClass(!!fieldErrors.dataEvangelismo)}
-                    disabled={saving}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -472,7 +529,7 @@ export default function EvangelismoPage() {
                     onChange={(e) => setLocalRealizado(e.target.value)}
                     className={inputClass(!!fieldErrors.localRealizado)}
                     placeholder="Ex.: Praça do bairro, Saracuruna..."
-                    disabled={saving}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -485,7 +542,7 @@ export default function EvangelismoPage() {
                     onChange={(e) => setIpdaResponsavel(e.target.value)}
                     className={inputClass(!!fieldErrors.ipdaResponsavel)}
                     placeholder="Ex.: IPDA Caxias"
-                    disabled={saving}
+                    disabled={formDisabled}
                   />
                 </Field>
               </Row>
@@ -496,7 +553,7 @@ export default function EvangelismoPage() {
                     value={teveApoioExterno}
                     onChange={(e) => setTeveApoioExterno(e.target.value as "Sim" | "Não")}
                     className={inputClass(false)}
-                    disabled={saving}
+                    disabled={formDisabled}
                   >
                     <option value="Não">Não</option>
                     <option value="Sim">Sim</option>
@@ -512,7 +569,7 @@ export default function EvangelismoPage() {
                     onChange={(e) => setIpdaApoiadora(e.target.value)}
                     className={inputClass(!!fieldErrors.ipdaApoiadora)}
                     placeholder="Ex.: IPDA Belford Roxo"
-                    disabled={saving || teveApoioExterno !== "Sim"}
+                    disabled={formDisabled || teveApoioExterno !== "Sim"}
                   />
                 </Field>
 
@@ -528,7 +585,7 @@ export default function EvangelismoPage() {
                     className={inputClass(!!fieldErrors.almasAceitaramJesus)}
                     inputMode="numeric"
                     placeholder="0"
-                    disabled={saving}
+                    disabled={formDisabled}
                   />
                 </Field>
               </Row>
@@ -546,7 +603,7 @@ export default function EvangelismoPage() {
                     className={inputClass(!!fieldErrors.almasSeReconciliaram)}
                     inputMode="numeric"
                     placeholder="0"
-                    disabled={saving}
+                    disabled={formDisabled}
                   />
                 </Field>
 
@@ -562,16 +619,22 @@ export default function EvangelismoPage() {
               <div className="flex flex-col md:flex-row gap-3">
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={formDisabled}
                   className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60"
                 >
-                  {saving ? "Salvando..." : "Salvar registro"}
+                  {saving
+                    ? "Salvando..."
+                    : loadingRole
+                    ? "Carregando permissões..."
+                    : demoMode
+                    ? "Registro desabilitado"
+                    : "Salvar registro"}
                 </button>
 
                 <button
                   type="button"
                   onClick={limparFormulario}
-                  disabled={saving}
+                  disabled={formDisabled}
                   className="bg-white border px-6 py-3 rounded-xl font-semibold hover:bg-gray-50 disabled:opacity-60"
                 >
                   Limpar
@@ -615,7 +678,7 @@ export default function EvangelismoPage() {
                 <div className="flex items-end gap-2">
                   <button
                     type="button"
-                    onClick={() => carregar()}
+                    onClick={() => void carregar()}
                     disabled={loading}
                     className="flex-1 px-4 py-3 rounded-xl bg-white border font-semibold hover:bg-gray-50 disabled:opacity-60"
                   >

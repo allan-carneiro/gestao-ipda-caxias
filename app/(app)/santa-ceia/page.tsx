@@ -8,7 +8,7 @@ import { db, writeAuditLog } from "@/src/lib/firebase";
 import AuthGuard from "@/app/components/AuthGuard";
 import { useToast } from "@/app/components/ToastProvider";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
-import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
+import { canManageCeia, isDemo } from "@/src/lib/auth/permissions";
 import { getPaths } from "@/src/lib/demo/paths";
 import type { UserRole } from "@/src/types/auth";
 
@@ -93,7 +93,7 @@ function formatIpdaPastor(congregacao?: string | null, pastor?: string | null) {
 function normalizarTexto(valor: unknown) {
   return String(valor ?? "")
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0300-\u036f/g, "")
     .toLowerCase()
     .trim();
 }
@@ -180,7 +180,7 @@ export default function SantaCeiaPage() {
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
   const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
   const allowWriteCeia = useMemo(
-    () => canEditMembers(userRole ?? undefined) && !isDemo(userRole ?? undefined),
+    () => canManageCeia(userRole ?? undefined) && !isDemo(userRole ?? undefined),
     [userRole]
   );
 
