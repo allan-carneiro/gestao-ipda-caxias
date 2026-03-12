@@ -5,6 +5,9 @@ import AuthGuard from "@/app/components/AuthGuard";
 import Link from "next/link";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import type { UserRole } from "@/src/types/auth";
 
 type Membro = {
   id: string;
@@ -32,7 +35,6 @@ function maskPhone(v: string) {
 }
 
 function getMonthFromISO(dateISO?: string) {
-  // yyyy-mm-dd
   if (!dateISO || dateISO.length < 7) return null;
   const mm = Number(dateISO.slice(5, 7));
   if (!mm || mm < 1 || mm > 12) return null;
@@ -47,29 +49,70 @@ function getDayFromISO(dateISO?: string) {
 }
 
 const MESES = [
-  "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
 ];
 
 export default function AniversariantesPage() {
   const [loading, setLoading] = useState(true);
+  const [loadingRole, setLoadingRole] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [membros, setMembros] = useState<Membro[]>([]);
   const [soAtivos, setSoAtivos] = useState(true);
 
-  const mesAtual = new Date().getMonth() + 1; // 1-12
+  const mesAtual = new Date().getMonth() + 1;
   const [mesSelecionado, setMesSelecionado] = useState<number>(mesAtual);
+
+  const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (!alive) return;
+        setUserRole(role);
+      } catch (e) {
+        console.error(e);
+        if (!alive) return;
+        setUserRole(null);
+      } finally {
+        if (alive) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
 
     async function load() {
+      if (!userRole) return;
+
       try {
         setLoading(true);
         setErro(null);
 
-        const snap = await getDocs(collection(db, "membros"));
+        const snap = await getDocs(collection(db, paths.membros));
         const arr: Membro[] = snap.docs.map((d) => ({
           id: d.id,
           ...(d.data() as any),
@@ -78,17 +121,22 @@ export default function AniversariantesPage() {
         if (alive) setMembros(arr);
       } catch (e: any) {
         console.error(e);
-        if (alive) setErro(e?.message ? `Erro: ${e.message}` : "Erro ao carregar membros.");
+        if (alive) {
+          setErro(e?.message ? `Erro: ${e.message}` : "Erro ao carregar membros.");
+        }
       } finally {
         if (alive) setLoading(false);
       }
     }
 
-    load();
+    if (!loadingRole && userRole) {
+      void load();
+    }
+
     return () => {
       alive = false;
     };
-  }, []);
+  }, [loadingRole, userRole, paths.membros]);
 
   const aniversariantes = useMemo(() => {
     return membros
@@ -125,7 +173,7 @@ export default function AniversariantesPage() {
               </Link>
               <button
                 onClick={() => window.print()}
-                className="rounded-xl bg-blue-600 text-white px-4 py-2 shadow hover:bg-blue-700"
+                className="rounded-xl bg-blue-600 px-4 py-2 text-white shadow hover:bg-blue-700"
               >
                 Imprimir
               </button>
@@ -133,19 +181,20 @@ export default function AniversariantesPage() {
           </div>
 
           {erro ? (
-            <div className="mt-6 rounded-2xl bg-red-50 border border-red-200 p-4 text-red-700">
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
               {erro}
             </div>
           ) : null}
 
-          <div className="mt-6 bg-white rounded-3xl shadow p-5 md:p-7">
-            <div className="flex flex-col md:flex-row gap-3 items-start md:items-center no-print">
+          <div className="mt-6 rounded-3xl bg-white p-5 shadow md:p-7">
+            <div className="no-print flex flex-col items-start gap-3 md:flex-row md:items-center">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-700">Mês:</span>
                 <select
                   value={mesSelecionado}
                   onChange={(e) => setMesSelecionado(Number(e.target.value))}
-                  className="px-4 py-3 border rounded-xl"
+                  className="rounded-xl border px-4 py-3"
+                  disabled={loading || loadingRole}
                 >
                   {MESES.map((nome, idx) => (
                     <option key={nome} value={idx + 1}>
@@ -160,6 +209,7 @@ export default function AniversariantesPage() {
                   type="checkbox"
                   checked={soAtivos}
                   onChange={(e) => setSoAtivos(e.target.checked)}
+                  disabled={loading || loadingRole}
                 />
                 Mostrar somente Ativos
               </label>
@@ -169,13 +219,13 @@ export default function AniversariantesPage() {
               </div>
             </div>
 
-            {loading ? (
+            {loading || loadingRole ? (
               <div className="mt-4">Carregando...</div>
             ) : (
               <div className="mt-4 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left border-b">
+                    <tr className="border-b text-left">
                       <th className="py-2 pr-3">Dia</th>
                       <th className="py-2 pr-3">Nome</th>
                       <th className="py-2">Telefone</th>
