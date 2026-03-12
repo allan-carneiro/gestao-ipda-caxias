@@ -6,6 +6,10 @@ import {
   query,
 } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import { isDemo } from "@/src/lib/auth/permissions";
+import type { UserRole } from "@/src/types/auth";
 
 export type Evangelismo = {
   id?: string;
@@ -28,6 +32,20 @@ function toNonNegativeInt(v: unknown) {
   const n = Number(v);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.floor(n);
+}
+
+function normalizarRole(role: UserRole | null | undefined): UserRole | undefined {
+  return role ?? undefined;
+}
+
+async function getEvangelismoCollectionPath(userRole?: UserRole | null) {
+  const role = normalizarRole(userRole) ?? (await getUserRoleFromToken()) ?? undefined;
+  const paths = getPaths(role);
+
+  return {
+    role,
+    path: `${paths.root}/evangelismos`,
+  };
 }
 
 export function normalizarEvangelismoPayload(
@@ -77,10 +95,21 @@ export function validarEvangelismoPayload(
   return { ok: true, value };
 }
 
-export async function criarEvangelismo(payload: Partial<Evangelismo>) {
+export async function criarEvangelismo(
+  payload: Partial<Evangelismo>,
+  userRole?: UserRole | null
+) {
   const vr = validarEvangelismoPayload(payload);
   if (!vr.ok) {
     throw new Error(vr.message);
+  }
+
+  const { role, path } = await getEvangelismoCollectionPath(userRole);
+
+  if (isDemo(role)) {
+    throw new Error(
+      "Modo demonstração: não é permitido criar registros de evangelismo."
+    );
   }
 
   const now = new Date().toISOString();
@@ -91,16 +120,16 @@ export async function criarEvangelismo(payload: Partial<Evangelismo>) {
     updatedAt: now,
   };
 
-  const ref = await addDoc(collection(db, "evangelismos"), finalPayload as any);
+  const ref = await addDoc(collection(db, path), finalPayload as any);
   return ref.id;
 }
 
-export async function listarEvangelismos(): Promise<Evangelismo[]> {
-  const qy = query(
-    collection(db, "evangelismos"),
-    orderBy("dataEvangelismo", "desc")
-  );
+export async function listarEvangelismos(
+  userRole?: UserRole | null
+): Promise<Evangelismo[]> {
+  const { path } = await getEvangelismoCollectionPath(userRole);
 
+  const qy = query(collection(db, path), orderBy("dataEvangelismo", "desc"));
   const snap = await getDocs(qy);
 
   return snap.docs.map((d) => {
