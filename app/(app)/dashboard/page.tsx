@@ -21,7 +21,7 @@ import {
   query,
   Timestamp,
 } from "firebase/firestore";
-import { db } from "@/src/lib/firebase";
+import { db, resetDemoDataCallable } from "@/src/lib/firebase";
 
 import {
   getStatsMembros,
@@ -911,6 +911,24 @@ export default function DashboardPage() {
     () => canEditMembers(userRole ?? undefined) && !isDemo(userRole ?? undefined),
     [userRole]
   );
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    if (typeof window === "undefined") return;
+
+    (window as typeof window & {
+      resetDemo?: () => Promise<unknown>;
+    }).resetDemo = async () => {
+      const result = await resetDemoDataCallable({});
+      console.log("resetDemoData result:", result);
+      return result;
+    };
+
+    return () => {
+      delete (window as typeof window & { resetDemo?: () => Promise<unknown> })
+        .resetDemo;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;

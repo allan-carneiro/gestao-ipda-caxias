@@ -7,6 +7,7 @@ import {
   getFirestore,
   serverTimestamp,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { getStorage } from "firebase/storage";
 
 import { getPaths } from "./demo/paths";
@@ -26,6 +27,7 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+export const functions = getFunctions(app, "southamerica-east1");
 
 export type AuditAction =
   | "create"
@@ -119,3 +121,5 @@ export async function writeAuditLog(input: WriteAuditLogInput) {
     return false;
   }
 }
+
+export const resetDemoDataCallable = httpsCallable(functions, "resetDemoData");

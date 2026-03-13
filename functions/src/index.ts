@@ -6,6 +6,7 @@
 import { setGlobalOptions } from "firebase-functions";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import { resetDemoSeed } from "./demo/resetDemoSeed";
 
 // Recomendado: região BR (São Paulo)
 setGlobalOptions({
@@ -40,7 +41,7 @@ function isValidMembroId(id: string) {
  *  - ceia_registros/{YYYY-MM}-{membroId}
  *  - ceia_controle/{YYYY-MM}/participantes/{membroId}
  */
-export const deleteCeiaRegistro = onCall(async (request) => {
+export const deleteCeiaRegistro = onCall(async (request: any) => {
   // 1) Auth obrigatório
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Login obrigatório.");
@@ -96,4 +97,34 @@ export const deleteCeiaRegistro = onCall(async (request) => {
   await batch.commit();
 
   return { ok: true, deleted: 1 };
+});
+
+/**
+ * Callable: resetDemoData
+ * Reseta completamente o ambiente DEMO em demo_data/demo
+ */
+export const resetDemoData = onCall(async (request: any) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Login obrigatório.");
+  }
+
+  const role = (request.auth.token as any)?.role;
+  if (role !== "admin") {
+    throw new HttpsError(
+      "permission-denied",
+      "Somente administradores podem resetar a DEMO."
+    );
+  }
+
+  try {
+    const result = await resetDemoSeed();
+
+    return {
+  message: "Ambiente DEMO resetado com sucesso.",
+  ...result,
+};
+  } catch (error) {
+    console.error("Falha ao resetar DEMO:", error);
+    throw new HttpsError("internal", "Falha ao resetar os dados da DEMO.");
+  }
 });

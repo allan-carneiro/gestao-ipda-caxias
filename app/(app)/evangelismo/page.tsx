@@ -76,7 +76,7 @@ export default function EvangelismoPage() {
     [loadingRole, userRole]
   );
 
-  const formDisabled = saving || loadingRole || demoMode;
+  const formDisabled = saving || loadingRole;
 
   useEffect(() => {
     let active = true;
@@ -129,9 +129,11 @@ export default function EvangelismoPage() {
   }
 
   async function carregar(opts?: { silent?: boolean }) {
+    if (!userRole) return;
+
     try {
       setLoading(true);
-      const items = await listarEvangelismos();
+      const items = await listarEvangelismos(userRole);
       setEvangelismos(items);
 
       if (!opts?.silent) {
@@ -146,9 +148,11 @@ export default function EvangelismoPage() {
   }
 
   useEffect(() => {
-    void carregar({ silent: true });
+    if (!loadingRole && userRole) {
+      void carregar({ silent: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadingRole, userRole]);
 
   function validarFormulario() {
     const errors: FieldErrors = {};
@@ -210,16 +214,8 @@ export default function EvangelismoPage() {
     clearMessages();
     clearFieldErrors();
 
-    if (loadingRole) {
+    if (loadingRole || !userRole) {
       const msg = "Aguarde o carregamento das permissões.";
-      setErro(msg);
-      toast.error(msg);
-      return;
-    }
-
-    if (demoMode) {
-      const msg =
-        "Modo demonstração: o registro de evangelismo está desabilitado para esta conta.";
       setErro(msg);
       toast.error(msg);
       return;
@@ -231,15 +227,18 @@ export default function EvangelismoPage() {
     try {
       setSaving(true);
 
-      await criarEvangelismo({
-        dataEvangelismo,
-        localRealizado,
-        ipdaResponsavel,
-        teveApoioExterno: teveApoioExterno === "Sim",
-        ipdaApoiadora: teveApoioExterno === "Sim" ? ipdaApoiadora : null,
-        almasAceitaramJesus: Number(onlyDigits(almasAceitaramJesus || "0")),
-        almasSeReconciliaram: Number(onlyDigits(almasSeReconciliaram || "0")),
-      });
+      await criarEvangelismo(
+        {
+          dataEvangelismo,
+          localRealizado,
+          ipdaResponsavel,
+          teveApoioExterno: teveApoioExterno === "Sim",
+          ipdaApoiadora: teveApoioExterno === "Sim" ? ipdaApoiadora : null,
+          almasAceitaramJesus: Number(onlyDigits(almasAceitaramJesus || "0")),
+          almasSeReconciliaram: Number(onlyDigits(almasSeReconciliaram || "0")),
+        },
+        userRole
+      );
 
       toastOk("Evangelismo registrado com sucesso.");
       limparFormulario();
@@ -368,7 +367,11 @@ export default function EvangelismoPage() {
         const cell = headerRow.getCell(i + 1);
         cell.value = header;
         cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-        cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        cell.alignment = {
+          horizontal: "center",
+          vertical: "middle",
+          wrapText: true,
+        };
         cell.fill = {
           type: "pattern",
           pattern: "solid",
@@ -491,7 +494,7 @@ export default function EvangelismoPage() {
 
           {demoMode ? (
             <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
-              <strong>Modo demonstração:</strong> o registro de novos evangelismos está desabilitado para esta conta. Você ainda pode consultar os dados fictícios e exportar a planilha.
+              <strong>Modo demonstração:</strong> os dados exibidos aqui são fictícios e usam a base DEMO.
             </div>
           ) : null}
 
@@ -510,7 +513,10 @@ export default function EvangelismoPage() {
 
             <Card title="Registrar evangelismo">
               <Row>
-                <Field label="Data do evangelismo *" error={fieldErrors.dataEvangelismo}>
+                <Field
+                  label="Data do evangelismo *"
+                  error={fieldErrors.dataEvangelismo}
+                >
                   <input
                     type="date"
                     value={dataEvangelismo}
@@ -551,7 +557,9 @@ export default function EvangelismoPage() {
                 <Field label="Teve IPDA de fora ajudando?">
                   <select
                     value={teveApoioExterno}
-                    onChange={(e) => setTeveApoioExterno(e.target.value as "Sim" | "Não")}
+                    onChange={(e) =>
+                      setTeveApoioExterno(e.target.value as "Sim" | "Não")
+                    }
                     className={inputClass(false)}
                     disabled={formDisabled}
                   >
@@ -626,8 +634,6 @@ export default function EvangelismoPage() {
                     ? "Salvando..."
                     : loadingRole
                     ? "Carregando permissões..."
-                    : demoMode
-                    ? "Registro desabilitado"
                     : "Salvar registro"}
                 </button>
 
@@ -644,10 +650,7 @@ export default function EvangelismoPage() {
 
             <Card title="Registros cadastrados">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <MiniStat
-                  label="Registros"
-                  value={String(resumo.totalRegistros)}
-                />
+                <MiniStat label="Registros" value={String(resumo.totalRegistros)} />
                 <MiniStat
                   label="Aceitaram Jesus"
                   value={String(resumo.totalAceitaram)}
@@ -803,15 +806,27 @@ function Card(props: { title: string; children: React.ReactNode }) {
 }
 
 function Row(props: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{props.children}</div>;
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {props.children}
+    </div>
+  );
 }
 
-function Field(props: { label: string; children: React.ReactNode; error?: string }) {
+function Field(props: {
+  label: string;
+  children: React.ReactNode;
+  error?: string;
+}) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700">{props.label}</label>
+      <label className="block text-sm font-medium text-gray-700">
+        {props.label}
+      </label>
       <div className="mt-2">{props.children}</div>
-      {props.error ? <p className="mt-2 text-sm text-red-600">{props.error}</p> : null}
+      {props.error ? (
+        <p className="mt-2 text-sm text-red-600">{props.error}</p>
+      ) : null}
     </div>
   );
 }
