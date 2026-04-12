@@ -23,7 +23,7 @@ if (!email || !role) {
   process.exit(1);
 }
 
-const valid = new Set(["admin", "secretaria", "lider", "consulta"]);
+const valid = new Set(["admin", "secretaria", "lider", "consulta", "demo"]);
 if (!valid.has(role)) {
   console.log("Role inválida:", role);
   process.exit(1);
