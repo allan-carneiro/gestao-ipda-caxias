@@ -367,7 +367,7 @@ export default function MembrosPage() {
       const tcTxt = normalizeText(m.telCarta ?? "");
 
       return (
-        nomeNorm.includes(termText) ||
+        nomeNorm.startsWith(termText) ||
         ipda.includes(termText) ||
         nrTxt.includes(termText) ||
         tcTxt.includes(termText)
