@@ -16,6 +16,9 @@ import {
 import { db } from "@/src/lib/firebase";
 import { PUBLIC_ENV, PUBLIC_ENV_OK } from "@/src/lib/publicEnv";
 import { useToast } from "@/app/components/ToastProvider";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import type { UserRole } from "@/src/types/auth";
 
 type Row = { id: string; createdAt?: number; [key: string]: any };
 
@@ -51,7 +54,6 @@ const SHEETS = [
   },
 ] as const;
 
-// ✅ fallbacks (caso ENV esteja vazia)
 const FALLBACK_SHEETS_1 =
   "https://docs.google.com/spreadsheets/d/1Vj6zm9udN4_YEnIHnkuyPjAlHpr5DVMANXdTLynG5P8/edit?gid=266525834#gid=266525834";
 
@@ -78,7 +80,6 @@ export default function PlanilhasPage() {
     toast.info(m);
   }
 
-  // ✅ usa ENV se existir; senão usa fallback
   const sheets1 =
     (PUBLIC_ENV.SHEETS_1_URL && PUBLIC_ENV.SHEETS_1_URL.trim()) ||
     FALLBACK_SHEETS_1;
@@ -88,8 +89,10 @@ export default function PlanilhasPage() {
     FALLBACK_SHEETS_2_JAN_JUN;
 
   const sheets2JulDez = SHEETS_2_JUL_DEZ;
-
   const envOk = PUBLIC_ENV_OK.SHEETS;
+
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [loadingRole, setLoadingRole] = useState(true);
 
   const [activeKey, setActiveKey] =
     useState<(typeof SHEETS)[number]["key"]>("planilha_1_interna");
@@ -99,32 +102,76 @@ export default function PlanilhasPage() {
     [activeKey]
   );
 
+  const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+
+  const activeCollectionPath = useMemo(() => {
+    return activeKey === "planilha_1_interna"
+      ? paths.planilha1Interna
+      : paths.planilha2Interna;
+  }, [activeKey, paths]);
+
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      try {
+        setLoadingRole(true);
+        const role = await getUserRoleFromToken();
+        if (active) setUserRole(role);
+      } catch (e) {
+        console.error("Erro ao carregar role:", e);
+        if (active) setUserRole(null);
+      } finally {
+        if (active) setLoadingRole(false);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   async function load() {
+    if (loadingRole) return;
+
     setLoading(true);
 
-    const q = query(collection(db, activeKey), orderBy("createdAt", "asc"));
-    const snap = await getDocs(q);
+    try {
+      const q = query(
+        collection(db, activeCollectionPath),
+        orderBy("createdAt", "asc")
+      );
+      const snap = await getDocs(q);
 
-    const data: Row[] = snap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as any),
-    }));
+      const data: Row[] = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as any),
+      }));
 
-    const withNumero = data.map((r, idx) => ({ ...r, numero: idx + 1 }));
-    setRows(withNumero);
-    setLoading(false);
+      const withNumero = data.map((r, idx) => ({ ...r, numero: idx + 1 }));
+      setRows(withNumero);
+    } catch (e) {
+      console.error("Erro ao carregar planilha:", e);
+      setRows([]);
+      flash("❌ Erro ao carregar a planilha.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    load();
+    if (!loadingRole) {
+      void load();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey]);
+  }, [activeCollectionPath, loadingRole]);
 
   function setCell(rowId: string, colKey: string, value: any) {
     setRows((prev) =>
@@ -145,46 +192,56 @@ export default function PlanilhasPage() {
   }
 
   async function addRow() {
-    if (saving || loading) return;
+    if (saving || loading || loadingRole) return;
 
-    const base: any = {};
-    activeSheet.columns.forEach((c) => {
-      if (c.key === "numero") return;
-      base[c.key] = c.key === "totalP" ? 0 : "";
-    });
-    base.createdAt = Date.now();
+    try {
+      const base: any = {};
+      activeSheet.columns.forEach((c) => {
+        if (c.key === "numero") return;
+        base[c.key] = c.key === "totalP" ? 0 : "";
+      });
+      base.createdAt = Date.now();
 
-    const ref = await addDoc(collection(db, activeKey), base);
+      const ref = await addDoc(collection(db, activeCollectionPath), base);
 
-    setRows((prev) => {
-      const next = [...prev, { id: ref.id, ...base }];
-      return next.map((r, idx) => ({ ...r, numero: idx + 1 }));
-    });
+      setRows((prev) => {
+        const next = [...prev, { id: ref.id, ...base }];
+        return next.map((r, idx) => ({ ...r, numero: idx + 1 }));
+      });
 
-    flash("Linha adicionada.");
+      flash("✅ Linha adicionada.");
+    } catch (e) {
+      console.error("Erro ao adicionar linha:", e);
+      flash("❌ Erro ao adicionar linha.");
+    }
   }
 
   async function removeRow(rowId: string) {
-    if (saving || loading) return;
+    if (saving || loading || loadingRole) return;
 
     const ok = confirm(
       "Remover esta linha?\n\nEssa ação não pode ser desfeita."
     );
     if (!ok) return;
 
-    await deleteDoc(doc(db, activeKey, rowId));
+    try {
+      await deleteDoc(doc(db, activeCollectionPath, rowId));
 
-    setRows((prev) =>
-      prev
-        .filter((r) => r.id !== rowId)
-        .map((r, idx) => ({ ...r, numero: idx + 1 }))
-    );
+      setRows((prev) =>
+        prev
+          .filter((r) => r.id !== rowId)
+          .map((r, idx) => ({ ...r, numero: idx + 1 }))
+      );
 
-    flash("Linha removida.");
+      flash("✅ Linha removida.");
+    } catch (e) {
+      console.error("Erro ao remover linha:", e);
+      flash("❌ Erro ao remover linha.");
+    }
   }
 
   async function saveAll() {
-    if (saving || loading) return;
+    if (saving || loading || loadingRole) return;
 
     setSaving(true);
 
@@ -198,7 +255,7 @@ export default function PlanilhasPage() {
             data.totalP = Number(data.totalP ?? 0);
           }
 
-          return updateDoc(doc(db, activeKey, id), data);
+          return updateDoc(doc(db, activeCollectionPath, id), data);
         })
       );
 
@@ -211,16 +268,14 @@ export default function PlanilhasPage() {
     }
   }
 
-  // ✅ EXPORTA XLSX (Excel de verdade — sem erro de acentos)
   async function exportData() {
-    if (exporting || loading) return;
+    if (exporting || loading || loadingRole) return;
 
     try {
       setExporting(true);
 
       const headers = activeSheet.columns.map((c) => c.label);
       const keys = activeSheet.columns.map((c) => c.key);
-
       const rowsData = rows.map((r) => keys.map((k) => r[k] ?? ""));
 
       const fileName =
@@ -230,7 +285,7 @@ export default function PlanilhasPage() {
 
       await exportExcel({
         fileName,
-        sheetName: activeSheet.title, // sanitização fica no exportExcel
+        sheetName: activeSheet.title,
         title:
           activeKey === "planilha_1_interna"
             ? "DIA DA CEIA — IPDA CAXIAS"
@@ -264,7 +319,7 @@ export default function PlanilhasPage() {
 
         <Link
           href="/dashboard"
-          className="bg-white border px-4 py-2 rounded-xl shadow-sm hover:bg-gray-50"
+          className="bg-white border px-4 py-2 rounded-xl shadow-sm hover:bg-gray-50 text-slate-700"
         >
           ← Voltar ao painel
         </Link>
@@ -329,14 +384,14 @@ export default function PlanilhasPage() {
           onClick={addRow}
           className="px-4 py-2 rounded-xl bg-white border hover:bg-gray-50"
           type="button"
-          disabled={loading || saving}
+          disabled={loading || saving || loadingRole}
         >
           ➕ Adicionar linha
         </button>
 
         <button
           onClick={saveAll}
-          disabled={saving || loading}
+          disabled={saving || loading || loadingRole}
           className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
           type="button"
         >
@@ -347,15 +402,17 @@ export default function PlanilhasPage() {
           onClick={exportData}
           className="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
           type="button"
-          disabled={loading || exporting}
+          disabled={loading || exporting || loadingRole}
         >
           {exporting ? "Exportando..." : "⬇️ Exportar Excel (.xlsx)"}
         </button>
       </div>
 
       <div className="bg-white rounded-2xl shadow overflow-x-auto">
-        {loading ? (
-          <div className="p-6 text-gray-600">Carregando...</div>
+        {loading || loadingRole ? (
+          <div className="p-6 text-gray-600">Carregando planilha...</div>
+        ) : rows.length === 0 ? (
+          <div className="p-6 text-gray-500">Nenhum dado encontrado.</div>
         ) : (
           <table className="min-w-[1100px] w-full text-sm">
             <thead className="bg-gray-50">
@@ -434,17 +491,6 @@ export default function PlanilhasPage() {
                   </td>
                 </tr>
               ))}
-
-              {rows.length === 0 && (
-                <tr>
-                  <td
-                    className="p-6 text-gray-500"
-                    colSpan={activeSheet.columns.length + 1}
-                  >
-                    Nenhuma linha ainda. Clique em “Adicionar linha”.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         )}

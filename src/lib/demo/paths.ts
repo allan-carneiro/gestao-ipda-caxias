@@ -16,6 +16,8 @@ export function getCollectionPath(
     | "auditoria"
     | "ceia_controle"
     | "evangelismos"
+    | "planilha_1_interna"
+    | "planilha_2_interna"
 ) {
   return `${getDataRoot(role)}/${collectionName}`;
 }
@@ -30,6 +32,8 @@ export function getPaths(role?: UserRole) {
     auditoria: `${root}/auditoria`,
     ceiaControle: `${root}/ceia_controle`,
     evangelismos: `${root}/evangelismos`,
+    planilha1Interna: `${root}/planilha_1_interna`,
+    planilha2Interna: `${root}/planilha_2_interna`,
   };
 }
 
