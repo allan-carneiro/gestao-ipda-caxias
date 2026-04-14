@@ -325,13 +325,7 @@ export default function PlanilhasPage() {
         </Link>
       </div>
 
-      {!envOk && (
-        <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
-          Atenção: variáveis do Sheets não carregaram (ENV). Estou usando links
-          de fallback. Se você acabou de criar/alterar o <b>.env.local</b>,
-          reinicie o servidor (<b>CTRL+C</b> e <b>npm run dev</b>).
-        </div>
-      )}
+      
 
       <div className="w-full bg-white border rounded-2xl p-4 shadow-sm flex flex-wrap gap-3">
         <a
