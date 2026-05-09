@@ -117,7 +117,10 @@ export async function listarControleCeia(
   assertAnoMes(ano, mes);
 
   const role = await getUserRoleFromToken();
-  const colRef = collection(db, getCeiaParticipantesPath(role ?? undefined, ano, mes));
+  const colRef = collection(
+    db,
+    getCeiaParticipantesPath(role ?? undefined, ano, mes)
+  );
   const snap = await getDocs(colRef);
 
   return snap.docs.map((d) => {
@@ -137,6 +140,7 @@ export async function listarControleCeia(
 /**
  * grava no controle
  * se presente=false => apaga automaticamente o registro do mês em ceia_registros
+ * e recalcula faltas seguidas do mês
  */
 export async function marcarPresencaNoControle(
   ano: number,
@@ -250,7 +254,16 @@ export async function removerRegistroCeiaNoMes(
 
   const memberId = assertValidMemberId(membroId);
   const id = registroDocId(ano, mes, memberId);
+
   await deleteDoc(doc(db, paths.ceiaRegistros, id));
+
+  const registrosMes = await listarRegistroCeia(ano, mes);
+  const presentesIds = registrosMes.map((r) => r.membroId);
+
+  await atualizarFaltasSeguidasCeia({
+    mesKey: ymDocId(ano, mes),
+    presentesIds,
+  });
 }
 
 /* =============================
@@ -307,6 +320,7 @@ export async function finalizarCeiaDoMes(ano: number, mes: number) {
 /* =============================
    DESMARCAR TODOS (CONTROLE)
    também apaga todos os registros do mês
+   e recalcula faltas seguidas
 ============================= */
 
 export async function desmarcarTodosNoControle(ano: number, mes: number) {
@@ -316,12 +330,21 @@ export async function desmarcarTodosNoControle(ano: number, mes: number) {
   const paths = getPaths(role ?? undefined);
   const ym = ymDocId(ano, mes);
 
-  const colRef = collection(db, getCeiaParticipantesPath(role ?? undefined, ano, mes));
+  const colRef = collection(
+    db,
+    getCeiaParticipantesPath(role ?? undefined, ano, mes)
+  );
   const snap = await getDocs(colRef);
 
-  const docsToUnmark = snap.docs.filter((d) => (d.data() as any)?.presente === true);
+  const docsToUnmark = snap.docs.filter(
+    (d) => (d.data() as any)?.presente === true
+  );
 
-  const participantesPath = getCeiaParticipantesPath(role ?? undefined, ano, mes);
+  const participantesPath = getCeiaParticipantesPath(
+    role ?? undefined,
+    ano,
+    mes
+  );
 
   const total = await commitInChunks((batch) => {
     let ops = 0;
@@ -344,6 +367,7 @@ export async function desmarcarTodosNoControle(ano: number, mes: number) {
     where("ano", "==", ano),
     where("mes", "==", mes)
   );
+
   const regsSnap = await getDocs(qRegs);
 
   if (!regsSnap.empty) {
@@ -361,6 +385,11 @@ export async function desmarcarTodosNoControle(ano: number, mes: number) {
       return ops;
     });
   }
+
+  await atualizarFaltasSeguidasCeia({
+    mesKey: ym,
+    presentesIds: [],
+  });
 
   return { total, ym };
 }
