@@ -1,8 +1,10 @@
 "use client";
-
+import { buildMembroPayload } from "@/src/features/membros/utils/buildMembroPayload";
+import { buildMembroAuditSnapshot } from "@/src/features/membros/utils/buildMembroAuditSnapshot";
+import { createMembro } from "@/src/features/membros/services/createMembro";
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, collection } from "firebase/firestore";
-import { db, writeAuditLog } from "@/src/lib/firebase";
+import { db } from "@/src/lib/firebase";
+
 import AuthGuard from "@/app/components/AuthGuard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -13,67 +15,13 @@ import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
 import { getPaths } from "@/src/lib/demo/paths";
 import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
 import type { UserRole } from "@/src/types/auth";
+import type {
+  EstadoCivil,
+  Status,
+  TelCarta,
+  Membro,
+} from "@/src/features/membros/types";
 
-type EstadoCivil =
-  | "Solteiro(a)"
-  | "Casado(a)"
-  | "Divorciado(a)"
-  | "Viúvo(a)"
-  | "União estável";
-
-type Status = "Ativo" | "Inativo";
-
-type TelCarta = "" | "Tel." | "Carta";
-
-type Membro = {
-  nomeCompleto?: string;
-  dataNascimento?: string;
-  cpf?: string;
-  rg?: string;
-  estadoCivil?: EstadoCivil;
-  nomeConjuge?: string | null;
-
-  telefoneCelular?: string;
-  telefoneResidencial?: string | null;
-  email?: string | null;
-
-  endereco?: {
-    logradouro?: string;
-    numero?: string;
-    complemento?: string | null;
-    lote?: string | null;
-    quadra?: string | null;
-    bairro?: string;
-    cidade?: string;
-    estado?: string;
-    cep?: string | null;
-  };
-
-  dataBatismo?: string | null;
-  campo?: string;
-  congregacao?: string;
-  pastor?: string;
-  cargoEclesiastico?: string;
-
-  naturalidade?: string | null;
-  escolaridade?: string | null;
-  profissao?: string | null;
-  filhosQtd?: number | null;
-  netosQtd?: number | null;
-
-  status?: Status;
-  observacoes?: string | null;
-
-  fotoUrl?: string | null;
-  anexos?: any[];
-
-  numeroRol?: number | null;
-  ipdaPastor?: string | null;
-  telCarta?: "Tel." | "Carta" | null;
-
-  createdAt?: string;
-  updatedAt?: string;
-};
 
 type FieldErrors = Record<string, string>;
 
@@ -144,26 +92,7 @@ function formatarIdade(idade: number | null) {
   return `${idade} ano${idade === 1 ? "" : "s"}`;
 }
 
-function buildMembroAuditSnapshot(payload: Partial<Membro>) {
-  return {
-    nomeCompleto: payload.nomeCompleto ?? null,
-    status: payload.status ?? null,
-    cpf: payload.cpf ?? null,
-    telefoneCelular: payload.telefoneCelular ?? null,
-    email: payload.email ?? null,
-    dataNascimento: payload.dataNascimento ?? null,
-    congregacao: payload.congregacao ?? null,
-    pastor: payload.pastor ?? null,
-    campo: payload.campo ?? null,
-    cargoEclesiastico: payload.cargoEclesiastico ?? null,
-    numeroRol: payload.numeroRol ?? null,
-    telCarta: payload.telCarta ?? null,
-    fotoUrl: payload.fotoUrl ?? null,
-    endereco: payload.endereco ?? null,
-    updatedAt: payload.updatedAt ?? null,
-    createdAt: payload.createdAt ?? null,
-  };
-}
+
 
 export default function NovoMembroPage() {
   const router = useRouter();
@@ -534,56 +463,56 @@ export default function NovoMembroPage() {
         const statusSeguro: Status = status;
         const nomeSeguro = normalizeNomeCompleto(nomeCompleto);
 
-        const payload: Membro = {
-          nomeCompleto: nomeSeguro,
-          dataNascimento,
-          cpf: cpfDigits,
-          rg: onlyDigits(rg),
-          estadoCivil,
-          nomeConjuge: nomeConjuge.trim() || null,
+        const payload = buildMembroPayload({
+  nomeSeguro,
+  dataNascimento,
+  cpfDigits,
+  rg,
 
-          telefoneCelular: onlyDigits(telefoneCelular),
-          telefoneResidencial: onlyDigits(telefoneResidencial) || null,
-          email: email.trim() || null,
+  estadoCivil,
+  nomeConjuge,
 
-          endereco: {
-            logradouro: logradouro.trim(),
-            numero: numero.trim(),
-            complemento: complemento.trim() || null,
-            lote: lote.trim() || null,
-            quadra: quadra.trim() || null,
-            bairro: bairro.trim(),
-            cidade: cidade.trim(),
-            estado: uf.trim().toUpperCase(),
-            cep: onlyDigits(cep) || null,
-          },
+  telefoneCelular,
+  telefoneResidencial,
+  email,
 
-          dataBatismo: dataBatismo || null,
-          campo: campo.trim(),
-          congregacao: congregacao.trim(),
-          pastor: pastor.trim(),
-          cargoEclesiastico: cargoEclesiastico.trim(),
+  logradouro,
+  numero,
+  complemento,
+  lote,
+  quadra,
+  bairro,
+  cidade,
+  uf,
+  cep,
 
-          naturalidade: naturalidade.trim() || null,
-          escolaridade: escolaridade.trim() || null,
-          profissao: profissao.trim() || null,
+  dataBatismo,
+  campo,
+  congregacao,
+  pastor,
+  cargoEclesiastico,
 
-          filhosQtd: filhosQtd.trim() === "" ? null : Math.max(0, Number(filhosQtd)),
-          netosQtd: netosQtd.trim() === "" ? null : Math.max(0, Number(netosQtd)),
+  naturalidade,
+  escolaridade,
+  profissao,
 
-          status: statusSeguro,
-          observacoes: observacoes.trim() || null,
+  filhosQtd,
+  netosQtd,
 
-          fotoUrl: fotoUrl ?? null,
-          anexos: anexos ?? [],
+  statusSeguro,
+  observacoes,
 
-          numeroRol: numeroRol.trim() ? Number(onlyDigits(numeroRol)) : null,
-          ipdaPastor: ipdaPastor.trim() || null,
-          telCarta: (telCarta || "").trim() ? (telCarta as "Tel." | "Carta") : null,
+  fotoUrl,
+  anexos,
 
-          createdAt: now,
-          updatedAt: now,
-        };
+  numeroRol,
+  ipdaPastor,
+  telCarta,
+
+  now,
+
+  onlyDigits,
+});
 
         const vr = cleanMembroPayload(payload);
 
@@ -620,24 +549,16 @@ export default function NovoMembroPage() {
           fotoUrl: (c.fotoUrl as any) ?? payload.fotoUrl,
         };
 
-        const ref = await addDoc(collection(db, paths.membros), payloadSeguro as any);
+const result = await createMembro({
+  payload: payloadSeguro,
+  paths,
+  userRole,
+});
 
-        await writeAuditLog({
-          action: "create",
-          entity: "membro",
-          entityId: ref.id,
-          entityLabel: payloadSeguro.nomeCompleto ?? "(Sem nome)",
-          details: "Cadastro de membro criado.",
-          after: buildMembroAuditSnapshot(payloadSeguro),
-          metadata: {
-            origem: "app/membros/novo",
-            role: userRole ?? null,
-            dataRoot: paths.membros,
-          },
-        });
+  
 
         toastOk("Membro cadastrado com sucesso! Abrindo ficha…");
-        setTimeout(() => router.push(`/membros/${ref.id}`), 650);
+        setTimeout(() => router.push(`/membros/${result.id}`), 650);
       },
       errorFallback: "Erro ao salvar.",
     });
