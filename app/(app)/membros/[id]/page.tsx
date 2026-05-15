@@ -14,7 +14,8 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { db, writeAuditLog } from "@/src/lib/firebase";
+import { db } from "@/src/lib/firebase";
+import { writeAuditLog } from "@/src/features/auditoria/services/writeAuditLog";
 import AuthGuard from "@/app/components/AuthGuard";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
 import { getPaths } from "@/src/lib/demo/paths";
