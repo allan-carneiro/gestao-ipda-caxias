@@ -1,5 +1,19 @@
 "use client";
+import { useForm } from "react-hook-form";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+
+import {
+  membroSchema,
+  type MembroFormData,
+} from "@/src/features/membros/schemas/membroSchema";
+import {
+  validateMembroForm,
+} from "@/src/features/membros/utils/validateMembroForm";
+import { useMembroForm } from "@/src/features/membros/hooks/useMembroForm";
+import { buildUpdateMembroAudit } from "@/src/features/membros/utils/buildUpdateMembroAudit";
+import { updateMembro } from "@/src/features/membros/services/updateMembro";
+import { buildUpdateMembroPayload } from "@/src/features/membros/utils/buildUpdateMembroPayload";
 import React, { useEffect, useMemo, useState } from "react";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
@@ -135,7 +149,25 @@ export default function EditarMembroPage() {
 
   const [loadingRole, setLoadingRole] = useState(true);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
+const form = useForm<MembroFormData>({
+  resolver: zodResolver(membroSchema),
 
+  defaultValues: {
+    nomeCompleto: "",
+    dataNascimento: "",
+    cpf: "",
+    telefoneCelular: "",
+    logradouro: "",
+    numero: "",
+    bairro: "",
+    cidade: "",
+    uf: "",
+    status: "",
+  },
+});
+const {
+  formState: { errors: zodErrors },
+} = form;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -153,6 +185,7 @@ export default function EditarMembroPage() {
   );
   const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
 
+  const [membroOriginal, setMembroOriginal] = useState<Membro | null>(null);
   const [nomeCompleto, setNomeCompleto] = useState("");
   const [dataNascimento, setDataNascimento] = useState("");
   const [cpf, setCpf] = useState("");
@@ -331,32 +364,27 @@ export default function EditarMembroPage() {
   }
 
   function clearMessages() {
-    setErro(null);
-    setSucesso(null);
-    setFieldErrors({});
-  }
+  setFieldErrors({});
+}
 
   function validarFormulario(): boolean {
-    const errors: FieldErrors = {};
+    const errors = validateMembroForm({
+  nomeCompleto,
+  dataNascimento,
+  cpf,
+  telefoneCelular,
+  logradouro,
+  numero,
+  bairro,
+  cidade,
+  uf,
+  status,
+  onlyDigits,
+  isValidCPF,
+  isStatusValido,
+});
 
-    if (!nomeCompleto.trim()) errors.nomeCompleto = "Informe o nome completo.";
-    if (!dataNascimento) errors.dataNascimento = "Informe a data de nascimento.";
-
-    const cpfDigits = onlyDigits(cpf);
-    if (!cpfDigits) errors.cpf = "Informe o CPF.";
-    else if (!isValidCPF(cpfDigits)) errors.cpf = "CPF inválido.";
-
-    const cel = onlyDigits(telefoneCelular);
-    if (!cel) errors.telefoneCelular = "Informe o telefone celular.";
-    else if (cel.length < 10) errors.telefoneCelular = "Telefone inválido.";
-
-    if (!logradouro.trim()) errors.logradouro = "Informe o logradouro.";
-    if (!numero.trim()) errors.numero = "Informe o número.";
-    if (!bairro.trim()) errors.bairro = "Informe o bairro.";
-    if (!cidade.trim()) errors.cidade = "Informe a cidade.";
-    if (!uf.trim()) errors.uf = "Informe a UF.";
-
-    if (!isStatusValido(status)) errors.status = "Selecione a situação (status).";
+   
 
     setFieldErrors(errors);
 
@@ -470,7 +498,7 @@ export default function EditarMembroPage() {
         }
 
         const m = snap.data() as Membro;
-
+setMembroOriginal(m);
         setNomeCompleto(m.nomeCompleto || "");
         setDataNascimento(m.dataNascimento || "");
         setCpf(maskCPF(m.cpf || ""));
@@ -559,51 +587,53 @@ export default function EditarMembroPage() {
 
         const nomeSeguro = normalizeNomeCompleto(nomeCompleto);
 
-        const payload: Partial<Membro> = {
-          nomeCompleto: nomeSeguro,
-          dataNascimento,
-          cpf: onlyDigits(cpf),
-          rg: onlyDigits(rg),
-          estadoCivil,
-          nomeConjuge: nomeConjuge.trim() || null,
+        const payload = buildUpdateMembroPayload({
+  nomeSeguro,
 
-          telefoneCelular: onlyDigits(telefoneCelular),
-          telefoneResidencial: onlyDigits(telefoneResidencial) || null,
-          email: email.trim() || null,
+  dataNascimento,
+  cpf,
+  rg,
 
-          endereco: {
-            logradouro: logradouro.trim(),
-            numero: numero.trim(),
-            complemento: complemento.trim() || null,
-            lote: lote.trim() || null,
-            quadra: quadra.trim() || null,
-            bairro: bairro.trim(),
-            cidade: cidade.trim(),
-            estado: uf.trim().toUpperCase(),
-            cep: onlyDigits(cep) || null,
-          },
+  estadoCivil,
+  nomeConjuge,
 
-          dataBatismo: dataBatismo || null,
-          campo: campo.trim(),
-          congregacao: congregacao.trim(),
-          pastor: pastor.trim(),
-          cargoEclesiastico: cargoEclesiastico.trim(),
+  telefoneCelular,
+  telefoneResidencial,
+  email,
 
-          naturalidade: naturalidade.trim() || null,
-          escolaridade: escolaridade.trim() || null,
-          profissao: profissao.trim() || null,
+  logradouro,
+  numero,
+  complemento,
+  lote,
+  quadra,
+  bairro,
+  cidade,
+  uf,
+  cep,
 
-          filhosQtd: filhosQtd.trim() === "" ? null : Math.max(0, Number(filhosQtd)),
-          netosQtd: netosQtd.trim() === "" ? null : Math.max(0, Number(netosQtd)),
+  dataBatismo,
+  campo,
+  congregacao,
+  pastor,
+  cargoEclesiastico,
 
-          status,
-          observacoes: observacoes.trim() || null,
+  naturalidade,
+  escolaridade,
+  profissao,
 
-          fotoUrl: fotoUrl ? fotoUrl.trim() : null,
-          anexos: anexos ?? [],
+  filhosQtd,
+  netosQtd,
 
-          updatedAt: now,
-        };
+  status,
+  observacoes,
+
+  fotoUrl,
+  anexos,
+
+  now,
+
+  onlyDigits,
+});
 
         const vr = cleanMembroPayload(payload);
 
@@ -637,7 +667,19 @@ export default function EditarMembroPage() {
           fotoUrl: (c.fotoUrl as any) ?? payload.fotoUrl,
         };
 
-        await updateDoc(doc(db, paths.membros, id), payloadSeguro as any);
+        await updateMembro({
+  id,
+  payload: payloadSeguro,
+  paths,
+
+  audit: buildUpdateMembroAudit({
+    id,
+    original: membroOriginal,
+    updated: payloadSeguro,
+  }),
+});
+
+
       },
       success: "Alterações salvas com sucesso!",
       errorFallback: "Erro ao salvar alterações.",
@@ -713,10 +755,15 @@ export default function EditarMembroPage() {
 
               <Card title="Identificação">
                 <Row>
-                  <Field label="Nome completo *" error={fieldErrors.nomeCompleto}>
+                  <Field label="Nome completo *" error={zodErrors.nomeCompleto?.message || fieldErrors.nomeCompleto}>
                     <input
                       value={nomeCompleto}
-                      onChange={(e) => setNomeCompleto(e.target.value)}
+onChange={(e) => {
+  setNomeCompleto(e.target.value);
+  form.setValue("nomeCompleto", e.target.value, {
+    shouldValidate: true,
+  });
+}}
                       className={inputClass(!!fieldErrors.nomeCompleto)}
                       disabled={isBusy}
                     />
