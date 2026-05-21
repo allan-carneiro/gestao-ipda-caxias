@@ -1,4 +1,4 @@
-import type { ChangeEvent } from "react";
+import { useEffect, useRef, type ChangeEvent } from "react";
 
 type CepInputProps = {
   value: string;
@@ -27,6 +27,7 @@ export function CepInput({
   inputClass,
   Field,
 }: CepInputProps) {
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   function handleChange(e: ChangeEvent<HTMLInputElement>) {
     const maskedValue = maskCEP(e.target.value);
 
@@ -38,6 +39,13 @@ export function CepInput({
       onCepComplete(maskedValue);
     }
   }
+  useEffect(() => {
+  return () => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+  };
+}, []);
 
   return (
     <Field label="CEP">
