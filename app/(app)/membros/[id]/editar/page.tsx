@@ -172,6 +172,16 @@ const form = useForm<MembroFormData>({
   },
 });
 function syncFormValue(field: keyof MembroFormData, value: string) {
+  if (field === "nomeCompleto") setNomeCompleto(value);
+  if (field === "dataNascimento") setDataNascimento(value);
+  if (field === "cpf") setCpf(value);
+  if (field === "telefoneCelular") setTelefoneCelular(value);
+  if (field === "logradouro") setLogradouro(value);
+  if (field === "numero") setNumero(value);
+  if (field === "bairro") setBairro(value);
+  if (field === "cidade") setCidade(value);
+  if (field === "uf") setUf(value);
+
   form.setValue(field, value, {
     shouldValidate: true,
     shouldDirty: true,
