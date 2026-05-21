@@ -1,4 +1,10 @@
 "use client";
+import { FormSection } from "@/src/features/membros/components/FormSection";
+import { useCep } from "@/src/features/membros/hooks/useCep";
+import { maskCEP, onlyDigits } from "@/src/features/membros/utils/masks";
+import { CepInput } from "@/src/features/membros/components/CepInput";
+import { SimpleInput } from "@/src/features/membros/components/SimpleInput";
+import { FormInput } from "@/src/features/membros/components/FormInput";
 import { useForm } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -165,6 +171,18 @@ const form = useForm<MembroFormData>({
     status: "",
   },
 });
+function syncFormValue(field: keyof MembroFormData, value: string) {
+  form.setValue(field, value, {
+    shouldValidate: true,
+    shouldDirty: true,
+  });
+}
+function getFieldError(field: keyof MembroFormData) {
+  return zodErrors[field]?.message || fieldErrors[field];
+}
+function hasFieldError(field: keyof MembroFormData) {
+  return !!getFieldError(field);
+}
 const {
   formState: { errors: zodErrors },
 } = form;
@@ -172,6 +190,11 @@ const {
   const [saving, setSaving] = useState(false);
 
   const [erro, setErro] = useState<string | null>(null);
+const { buscarCepAuto, isFetchingCep } = useCep({
+  setErro,
+  toastErro,
+  syncFormValue,
+});
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
@@ -269,9 +292,6 @@ const {
     }
   }
 
-  function onlyDigits(v: string) {
-    return (v || "").replace(/\D/g, "");
-  }
 
   function normalizeNomeCompleto(nome: string) {
     const cleaned = String(nome ?? "")
@@ -300,10 +320,7 @@ const {
       .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
   }
 
-  function maskCEP(v: string) {
-    const d = onlyDigits(v).slice(0, 8);
-    return d.replace(/^(\d{5})(\d)/, "$1-$2");
-  }
+ 
 
   function maskPhone(v: string) {
     const d = onlyDigits(v).slice(0, 11);
@@ -337,31 +354,7 @@ const {
     return cpf2.endsWith(`${d1}${d2}`);
   }
 
-  async function buscarCepAuto(cepValue: string) {
-    const cepDigits = onlyDigits(cepValue);
-    if (cepDigits.length !== 8) return;
 
-    try {
-      setErro(null);
-      const res = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
-      const data = await res.json();
-
-      if (data?.erro) {
-        toast.error("CEP não encontrado.");
-        setErro("CEP não encontrado.");
-        return;
-      }
-
-      setLogradouro(data.logradouro || "");
-      setBairro(data.bairro || "");
-      setCidade(data.localidade || "");
-      setUf(data.uf || "");
-      toast.success("CEP preenchido automaticamente.");
-    } catch (err) {
-      console.error(err);
-      toastErro(err, "Erro ao buscar CEP.");
-    }
-  }
 
   function clearMessages() {
   setFieldErrors({});
@@ -755,44 +748,56 @@ setMembroOriginal(m);
 
               <Card title="Identificação">
                 <Row>
-                  <Field label="Nome completo *" error={zodErrors.nomeCompleto?.message || fieldErrors.nomeCompleto}>
-                    <input
-                      value={nomeCompleto}
-onChange={(e) => {
-  setNomeCompleto(e.target.value);
-  form.setValue("nomeCompleto", e.target.value, {
-    shouldValidate: true,
-  });
-}}
-                      className={inputClass(!!fieldErrors.nomeCompleto)}
-                      disabled={isBusy}
-                    />
-                  </Field>
+                 <FormInput
+  label="Nome completo *"
+  field="nomeCompleto"
+  value={nomeCompleto}
+  error={getFieldError("nomeCompleto")}
+  onChange={syncFormValue}
+  inputClass={inputClass}
+  Field={Field}
+ disabled={isBusy || isFetchingCep}
+/>
 
-                  <Field label="Data de nascimento *" error={fieldErrors.dataNascimento}>
-                    <input
-                      type="date"
-                      value={dataNascimento}
-                      onChange={(e) => setDataNascimento(e.target.value)}
-                      className={inputClass(!!fieldErrors.dataNascimento)}
-                      disabled={isBusy}
-                    />
-                    <p className="mt-2 text-xs text-gray-600">
-                      Idade (automática):{" "}
-                      <span className="font-semibold">{idadeTxt || "—"}</span>
-                    </p>
-                  </Field>
+                  <Field
+  label="Data de nascimento *"
+  error={getFieldError("dataNascimento")}
+>
+  <input
+    type="date"
+    value={dataNascimento}
+    onChange={(e) => {
+      setDataNascimento(e.target.value);
+      syncFormValue("dataNascimento", e.target.value);
+    }}
+    className={inputClass(hasFieldError("dataNascimento"))}
+    disabled={isBusy}
+  />
+  <p className="mt-2 text-xs text-gray-600">
+    Idade (automática):{" "}
+    <span className="font-semibold">{idadeTxt || "—"}</span>
+  </p>
+</Field>
 
-                  <Field label="CPF *" error={fieldErrors.cpf}>
-                    <input
-                      value={cpf}
-                      onChange={(e) => setCpf(maskCPF(e.target.value))}
-                      className={inputClass(!!fieldErrors.cpf)}
-                      inputMode="numeric"
-                      placeholder="000.000.000-00"
-                      disabled={isBusy}
-                    />
-                  </Field>
+                  <Field
+  label="CPF *"
+  error={getFieldError("cpf")}
+>
+  <input
+    value={cpf}
+    onChange={(e) => {
+      const value = maskCPF(e.target.value);
+
+      setCpf(value);
+
+     syncFormValue("cpf", value);
+    }}
+    className={inputClass(hasFieldError("cpf"))}
+    inputMode="numeric"
+    placeholder="000.000.000-00"
+    disabled={isBusy}
+  />
+</Field>
                 </Row>
 
                 <Row>
@@ -833,16 +838,24 @@ onChange={(e) => {
 
               <Card title="Contato">
                 <Row>
-                  <Field label="Telefone celular *" error={fieldErrors.telefoneCelular}>
-                    <input
-                      value={telefoneCelular}
-                      onChange={(e) => setTelefoneCelular(maskPhone(e.target.value))}
-                      className={inputClass(!!fieldErrors.telefoneCelular)}
-                      inputMode="numeric"
-                      placeholder="(21) 90000-0000"
-                      disabled={isBusy}
-                    />
-                  </Field>
+                  <Field
+  label="Telefone celular *"
+  error={getFieldError("telefoneCelular")}
+>
+  <input
+    value={telefoneCelular}
+    onChange={(e) => {
+      const value = maskPhone(e.target.value);
+
+      setTelefoneCelular(value);
+
+      syncFormValue("telefoneCelular", value);
+    }}
+    className={inputClass(hasFieldError("telefoneCelular"))}
+    inputMode="numeric"
+    disabled={isBusy}
+  />
+</Field>
 
                   <Field label="Telefone residencial">
                     <input
@@ -868,100 +881,105 @@ onChange={(e) => {
               </Card>
 
               <Card title="Endereço completo">
+                <FormSection title="Endereço completo">
                 <Row>
-                  <Field label="Logradouro *" error={fieldErrors.logradouro}>
-                    <input
-                      value={logradouro}
-                      onChange={(e) => setLogradouro(e.target.value)}
-                      className={inputClass(!!fieldErrors.logradouro)}
-                      disabled={isBusy}
-                    />
-                  </Field>
+              <FormInput
+  label="Logradouro *"
+  field="logradouro"
+  value={logradouro}
+  error={getFieldError("logradouro")}
+  onChange={syncFormValue}
+  inputClass={inputClass}
+  Field={Field}
+  disabled={isBusy}
+/>
 
-                  <Field label="Número *" error={fieldErrors.numero}>
-                    <input
-                      value={numero}
-                      onChange={(e) => setNumero(e.target.value)}
-                      className={inputClass(!!fieldErrors.numero)}
-                      disabled={isBusy}
-                    />
-                  </Field>
+                <FormInput
+  label="Número *"
+  field="numero"
+  value={numero}
+  error={getFieldError("numero")}
+  onChange={syncFormValue}
+  inputClass={inputClass}
+  Field={Field}
+  disabled={isBusy}
+/>
 
-                  <Field label="Complemento">
-                    <input
-                      value={complemento}
-                      onChange={(e) => setComplemento(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
+<SimpleInput
+  label="Complemento"
+  value={complemento}
+  onChange={setComplemento}
+  inputClass={inputClass}
+  Field={Field}
+  disabled={isBusy}
+/>
                 </Row>
 
                 <Row>
-                  <Field label="Lote">
-                    <input
-                      value={lote}
-                      onChange={(e) => setLote(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
+                <SimpleInput
+  label="Lote"
+  value={lote}
+  onChange={setLote}
+  inputClass={inputClass}
+  Field={Field}
+  disabled={isBusy}
+/>
 
-                  <Field label="Quadra">
-                    <input
-                      value={quadra}
-                      onChange={(e) => setQuadra(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
-
-                  <Field label="Bairro *" error={fieldErrors.bairro}>
-                    <input
-                      value={bairro}
-                      onChange={(e) => setBairro(e.target.value)}
-                      className={inputClass(!!fieldErrors.bairro)}
-                      disabled={isBusy}
-                    />
-                  </Field>
+<SimpleInput
+  label="Quadra"
+  value={quadra}
+  onChange={setQuadra}
+  inputClass={inputClass}
+  Field={Field}
+  disabled={isBusy}
+/>
+<FormInput
+  label="Bairro *"
+  field="bairro"
+  value={bairro}
+  error={getFieldError("bairro")}
+  onChange={syncFormValue}
+  inputClass={inputClass}
+  Field={Field}
+  disabled={isBusy}
+/>
                 </Row>
 
                 <Row>
-                  <Field label="Cidade *" error={fieldErrors.cidade}>
-                    <input
-                      value={cidade}
-                      onChange={(e) => setCidade(e.target.value)}
-                      className={inputClass(!!fieldErrors.cidade)}
-                      disabled={isBusy}
-                    />
-                  </Field>
-
-                  <Field label="UF *" error={fieldErrors.uf}>
-                    <input
-                      value={uf}
-                      onChange={(e) => setUf(e.target.value)}
-                      className={inputClass(!!fieldErrors.uf)}
-                      placeholder="Ex: RJ"
-                      disabled={isBusy}
-                    />
-                  </Field>
-
-                  <Field label="CEP">
-                    <input
-                      value={cep}
-                      onChange={(e) => {
-                        const v = maskCEP(e.target.value);
-                        setCep(v);
-                        const digits = onlyDigits(v);
-                        if (digits.length === 8) buscarCepAuto(v);
-                      }}
-                      className={inputClass(false)}
-                      inputMode="numeric"
-                      placeholder="25035-185"
-                      disabled={isBusy}
-                    />
-                  </Field>
+                  <FormInput
+  label="Cidade *"
+  field="cidade"
+  value={cidade}
+  error={getFieldError("cidade")}
+  onChange={syncFormValue}
+  inputClass={inputClass}
+  Field={Field}
+  disabled={isBusy}
+/>
+<FormInput
+  label="UF *"
+  field="uf"
+  value={uf}
+  error={getFieldError("uf")}
+  onChange={syncFormValue}
+  inputClass={inputClass}
+  Field={Field}
+  placeholder="Ex: RJ"
+  disabled={isBusy}
+/>
+<CepInput
+  value={cep}
+  onChange={setCep}
+  onCepComplete={buscarCepAuto}
+  maskCEP={maskCEP}
+  onlyDigits={onlyDigits}
+  inputClass={inputClass}
+  Field={Field}
+  disabled={isBusy}
+  isLoading={isFetchingCep}
+/>
                 </Row>
+                </FormSection>
               </Card>
 
               <Card title="Igreja">
