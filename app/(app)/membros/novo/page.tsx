@@ -1,10 +1,8 @@
 "use client";
+
 import { buildMembroPayload } from "@/src/features/membros/utils/buildMembroPayload";
-import { buildMembroAuditSnapshot } from "@/src/features/membros/utils/buildMembroAuditSnapshot";
 import { createMembro } from "@/src/features/membros/services/createMembro";
 import React, { useEffect, useMemo, useState } from "react";
-import { db } from "@/src/lib/firebase";
-
 import AuthGuard from "@/app/components/AuthGuard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,6 +12,12 @@ import { cleanMembroPayload } from "@/src/lib/validators";
 import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
 import { getPaths } from "@/src/lib/demo/paths";
 import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
+import {
+  maskCEP,
+  maskCPF,
+  maskPhone,
+  onlyDigits,
+} from "@/src/features/membros/utils/masks";
 import type { UserRole } from "@/src/types/auth";
 import type {
   EstadoCivil,
@@ -21,7 +25,6 @@ import type {
   TelCarta,
   Membro,
 } from "@/src/features/membros/types";
-
 
 type FieldErrors = Record<string, string>;
 
@@ -92,8 +95,6 @@ function formatarIdade(idade: number | null) {
   return `${idade} ano${idade === 1 ? "" : "s"}`;
 }
 
-
-
 export default function NovoMembroPage() {
   const router = useRouter();
   const toast = useToast();
@@ -153,6 +154,7 @@ export default function NovoMembroPage() {
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
   const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
+
   const allowCreateMembers = useMemo(
     () => canEditMembers(userRole ?? undefined) && !isDemo(userRole ?? undefined),
     [userRole]
@@ -224,15 +226,12 @@ export default function NovoMembroPage() {
   const idade = useMemo(() => calcularIdade(dataNascimento ?? null), [dataNascimento]);
   const idadeTxt = useMemo(() => formatarIdade(idade), [idade]);
 
-  function onlyDigits(v: string) {
-    return (v || "").replace(/\D/g, "");
-  }
-
   function normalizeNomeCompleto(nome: string) {
     const cleaned = String(nome ?? "").trim().replace(/\s+/g, " ");
     if (!cleaned) return "";
 
     const lowerWords = new Set(["da", "de", "do", "das", "dos", "e"]);
+
     return cleaned
       .split(" ")
       .map((w, i) => {
@@ -243,46 +242,24 @@ export default function NovoMembroPage() {
       .join(" ");
   }
 
-  function maskCPF(v: string) {
-    const d = onlyDigits(v).slice(0, 11);
-    return d
-      .replace(/^(\d{3})(\d)/, "$1.$2")
-      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-      .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
-  }
-
-  function maskCEP(v: string) {
-    const d = onlyDigits(v).slice(0, 8);
-    return d.replace(/^(\d{5})(\d)/, "$1-$2");
-  }
-
-  function maskPhone(v: string) {
-    const d = onlyDigits(v).slice(0, 11);
-    if (!d) return "";
-    if (d.length <= 10) {
-      return d
-        .replace(/^(\d{2})(\d)/, "($1) $2")
-        .replace(/(\d{4})(\d)/, "$1-$2");
-    }
-    return d
-      .replace(/^(\d{2})(\d)/, "($1) $2")
-      .replace(/(\d{5})(\d)/, "$1-$2");
-  }
-
   function isValidCPF(cpfDigits: string) {
-    const cpf = (cpfDigits || "").replace(/\D/g, "");
+    const cpf = onlyDigits(cpfDigits);
     if (cpf.length !== 11) return false;
     if (/^(\d)\1{10}$/.test(cpf)) return false;
 
     const calcDigit = (base: string, factorStart: number) => {
       let sum = 0;
-      for (let i = 0; i < base.length; i++) sum += Number(base[i]) * (factorStart - i);
+      for (let i = 0; i < base.length; i++) {
+        sum += Number(base[i]) * (factorStart - i);
+      }
+
       const mod = sum % 11;
       return mod < 2 ? 0 : 11 - mod;
     };
 
     const d1 = calcDigit(cpf.slice(0, 9), 10);
     const d2 = calcDigit(cpf.slice(0, 9) + String(d1), 11);
+
     return cpf.endsWith(`${d1}${d2}`);
   }
 
@@ -294,9 +271,11 @@ export default function NovoMembroPage() {
 
   async function fetchJsonNoStore(url: string) {
     const res = await fetch(url, { cache: "no-store" });
+
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
+
     return res.json();
   }
 
@@ -318,7 +297,9 @@ export default function NovoMembroPage() {
           return;
         }
       } catch {
-        const b = await fetchJsonNoStore(`https://brasilapi.com.br/api/cep/v1/${cepDigits}`);
+        const b = await fetchJsonNoStore(
+          `https://brasilapi.com.br/api/cep/v1/${cepDigits}`
+        );
 
         data = {
           logradouro: b?.street ?? "",
@@ -350,6 +331,7 @@ export default function NovoMembroPage() {
     if (!dataNascimento) errors.dataNascimento = "Informe a data de nascimento.";
 
     const cpfDigits = onlyDigits(cpf);
+
     if (!cpfDigits) errors.cpf = "Informe o CPF.";
     else if (!isValidCPF(cpfDigits)) errors.cpf = "CPF inválido.";
 
@@ -360,6 +342,7 @@ export default function NovoMembroPage() {
     if (!uf.trim()) errors.uf = "Informe a UF.";
 
     const cel = onlyDigits(telefoneCelular);
+
     if (!cel) errors.telefoneCelular = "Informe o telefone celular.";
     else if (cel.length < 10) errors.telefoneCelular = "Telefone inválido.";
 
@@ -367,11 +350,16 @@ export default function NovoMembroPage() {
       errors.cargoEclesiastico = "Selecione o cargo eclesiástico.";
     }
 
-    if (!isStatusValido(status)) errors.status = "Selecione a situação (status).";
+    if (!isStatusValido(status)) {
+      errors.status = "Selecione a situação (status).";
+    }
 
     if (numeroRol.trim()) {
       const n = Number(onlyDigits(numeroRol));
-      if (!Number.isFinite(n) || n <= 0) errors.numeroRol = "Nº do rol inválido.";
+
+      if (!Number.isFinite(n) || n <= 0) {
+        errors.numeroRol = "Nº do rol inválido.";
+      }
     }
 
     setFieldErrors(errors);
@@ -391,6 +379,7 @@ export default function NovoMembroPage() {
       const msg = demoMode
         ? "Modo demonstração: upload de foto desabilitado para esta conta."
         : "Você não tem permissão para cadastrar membros.";
+
       setErro(msg);
       toast.error(msg);
       return;
@@ -403,12 +392,15 @@ export default function NovoMembroPage() {
         setSucesso(null);
 
         const result = await uploadImageToCloudinary(file);
+
         const url =
           typeof result === "string"
             ? result
             : (result as any)?.secure_url ?? (result as any)?.url ?? "";
 
-        if (!url) throw new Error("Não foi possível obter a URL da foto após o upload.");
+        if (!url) {
+          throw new Error("Não foi possível obter a URL da foto após o upload.");
+        }
 
         setFotoUrl(String(url).trim());
       },
@@ -419,6 +411,7 @@ export default function NovoMembroPage() {
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
+
     if (saving) return;
 
     clearErrors();
@@ -441,6 +434,7 @@ export default function NovoMembroPage() {
       const msg = demoMode
         ? "Modo demonstração: cadastro de membro desabilitado para esta conta."
         : "Você não tem permissão para cadastrar membros.";
+
       setErro(msg);
       toast.error(msg);
       return;
@@ -456,7 +450,11 @@ export default function NovoMembroPage() {
         const now = new Date().toISOString();
 
         if (!isStatusValido(status)) {
-          setFieldErrors((p) => ({ ...p, status: "Selecione a situação (status)." }));
+          setFieldErrors((p) => ({
+            ...p,
+            status: "Selecione a situação (status).",
+          }));
+
           throw new Error("Revise os campos destacados antes de salvar.");
         }
 
@@ -464,55 +462,55 @@ export default function NovoMembroPage() {
         const nomeSeguro = normalizeNomeCompleto(nomeCompleto);
 
         const payload = buildMembroPayload({
-  nomeSeguro,
-  dataNascimento,
-  cpfDigits,
-  rg,
+          nomeSeguro,
+          dataNascimento,
+          cpfDigits,
+          rg,
 
-  estadoCivil,
-  nomeConjuge,
+          estadoCivil,
+          nomeConjuge,
 
-  telefoneCelular,
-  telefoneResidencial,
-  email,
+          telefoneCelular,
+          telefoneResidencial,
+          email,
 
-  logradouro,
-  numero,
-  complemento,
-  lote,
-  quadra,
-  bairro,
-  cidade,
-  uf,
-  cep,
+          logradouro,
+          numero,
+          complemento,
+          lote,
+          quadra,
+          bairro,
+          cidade,
+          uf,
+          cep,
 
-  dataBatismo,
-  campo,
-  congregacao,
-  pastor,
-  cargoEclesiastico,
+          dataBatismo,
+          campo,
+          congregacao,
+          pastor,
+          cargoEclesiastico,
 
-  naturalidade,
-  escolaridade,
-  profissao,
+          naturalidade,
+          escolaridade,
+          profissao,
 
-  filhosQtd,
-  netosQtd,
+          filhosQtd,
+          netosQtd,
 
-  statusSeguro,
-  observacoes,
+          statusSeguro,
+          observacoes,
 
-  fotoUrl,
-  anexos,
+          fotoUrl,
+          anexos,
 
-  numeroRol,
-  ipdaPastor,
-  telCarta,
+          numeroRol,
+          ipdaPastor,
+          telCarta,
 
-  now,
+          now,
 
-  onlyDigits,
-});
+          onlyDigits,
+        });
 
         const vr = cleanMembroPayload(payload);
 
@@ -549,16 +547,17 @@ export default function NovoMembroPage() {
           fotoUrl: (c.fotoUrl as any) ?? payload.fotoUrl,
         };
 
-const result = await createMembro({
-  payload: payloadSeguro,
-  paths,
-  userRole,
-});
-
-  
+        const result = await createMembro({
+          payload: payloadSeguro,
+          paths,
+          userRole,
+        });
 
         toastOk("Membro cadastrado com sucesso! Abrindo ficha…");
-        setTimeout(() => router.push(`/membros/${result.id}`), 650);
+
+        setTimeout(() => {
+          router.push(`/membros/${result.id}`);
+        }, 650);
       },
       errorFallback: "Erro ao salvar.",
     });
@@ -573,6 +572,7 @@ const result = await createMembro({
               <h1 className="text-2xl md:text-3xl font-bold text-blue-700">
                 Cadastrar membro
               </h1>
+
               <p className="text-gray-600 mt-1">
                 Preencha os dados abaixo para criar o cadastro.
               </p>
@@ -676,6 +676,7 @@ const result = await createMembro({
                     className={inputClass(!!fieldErrors.dataNascimento)}
                     disabled={formDisabled}
                   />
+
                   <p className="mt-2 text-xs text-gray-600">
                     Idade (automática):{" "}
                     <span className="font-semibold">{idadeTxt || "—"}</span>
@@ -850,10 +851,15 @@ const result = await createMembro({
                   <input
                     value={cep}
                     onChange={(e) => {
-                      const v = maskCEP(e.target.value);
-                      setCep(v);
-                      const digits = onlyDigits(v);
-                      if (digits.length === 8) buscarCepAuto(v);
+                      const value = maskCEP(e.target.value);
+
+                      setCep(value);
+
+                      const digits = onlyDigits(value);
+
+                      if (digits.length === 8) {
+                        buscarCepAuto(value);
+                      }
                     }}
                     className={inputClass(false)}
                     inputMode="numeric"
@@ -924,7 +930,7 @@ const result = await createMembro({
                 </Field>
 
                 <Field label="">
-                  <div className="mt-2 text-sm text-gray-500"></div>
+                  <div className="mt-2 text-sm text-gray-500" />
                 </Field>
               </Row>
             </Card>
@@ -998,6 +1004,7 @@ const result = await createMembro({
               {fotoUrl && (
                 <div className="mb-4">
                   <p className="mb-2 text-sm text-gray-600">Prévia da foto:</p>
+
                   <img
                     src={fotoUrl}
                     alt="Foto do membro"
@@ -1013,9 +1020,11 @@ const result = await createMembro({
                 onChange={async (e) => {
                   const input = e.currentTarget;
                   const file = input.files?.[0];
+
                   input.value = "";
 
                   if (!file) return;
+
                   if (!file.type.startsWith("image/")) {
                     const msg = "Selecione uma imagem válida.";
                     setErro(msg);
@@ -1081,10 +1090,12 @@ const result = await createMembro({
             background: white;
             outline: none;
           }
+
           .inputError {
             border-color: rgb(248 113 113);
             box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.15);
           }
+
           .textareaBase {
             width: 100%;
             min-height: 120px;

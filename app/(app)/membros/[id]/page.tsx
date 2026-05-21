@@ -1,5 +1,6 @@
 "use client";
 
+import { maskCEP, maskCPF, maskPhone } from "@/src/features/membros/utils/masks";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -27,26 +28,19 @@ type Status = "Ativo" | "Inativo";
 type Membro = {
   nomeCompleto?: string;
   nome?: string;
-
   telefoneCelular?: string;
   telefone?: string;
   email?: string | null;
-
   status?: Status;
-
   cpf?: string;
   rg?: string;
-
   dataNascimento?: string;
   dataBatismo?: string | null;
-
   campo?: string;
   congregacao?: string;
   pastor?: string;
   cargoEclesiastico?: string;
-
   fotoUrl?: string | null;
-
   endereco?: {
     logradouro?: string;
     numero?: string;
@@ -56,7 +50,6 @@ type Membro = {
     estado?: string;
     cep?: string | null;
   };
-
   observacoes?: string | null;
   updatedAt?: string | null;
   createdAt?: string | null;
@@ -66,45 +59,8 @@ function isStatusValido(v: any): v is Status {
   return v === "Ativo" || v === "Inativo";
 }
 
-function onlyDigits(v?: string | null) {
-  return (v || "").replace(/\D/g, "");
-}
-
-function maskCPF(v?: string | null) {
-  const d = onlyDigits(v).slice(0, 11);
-  if (!d) return "";
-  return d
-    .replace(/^(\d{3})(\d)/, "$1.$2")
-    .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
-}
-
-function maskCEP(v?: string | null) {
-  const d = onlyDigits(v).slice(0, 8);
-  if (!d) return "";
-  return d.replace(/^(\d{5})(\d)/, "$1-$2");
-}
-
-function maskPhone(v?: string | null) {
-  const d = onlyDigits(v).slice(0, 11);
-  if (!d) return "";
-
-  if (d.length <= 10) {
-    return d
-      .replace(/^(\d{2})(\d)/, "($1) $2")
-      .replace(/(\d{4})(\d)/, "$1-$2");
-  }
-
-  return d
-    .replace(/^(\d{2})(\d)/, "($1) $2")
-    .replace(/(\d{5})(\d)/, "$1-$2");
-}
-
 function normalizeNomeCompleto(nome: string) {
-  const cleaned = String(nome ?? "")
-    .trim()
-    .replace(/\s+/g, " ");
-
+  const cleaned = String(nome ?? "").trim().replace(/\s+/g, " ");
   if (!cleaned) return "";
 
   const lowerWords = new Set(["da", "de", "do", "das", "dos", "e"]);
@@ -299,12 +255,12 @@ export default function VerMembroPage() {
   const [actionLoading, setActionLoading] = useState(false);
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+
   const allowEditMembers = useMemo(
-    () =>
-      canEditMembers(userRole ?? undefined) &&
-      !isDemo(userRole ?? undefined),
+    () => canEditMembers(userRole ?? undefined) && !isDemo(userRole ?? undefined),
     [userRole]
   );
+
   const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
 
   useEffect(() => {
@@ -375,9 +331,9 @@ export default function VerMembroPage() {
   const editarHref = memberId ? `/membros/${memberId}/editar` : "/membros";
 
   const telefone = useMemo(() => maskPhone(telRaw), [telRaw]);
-  const cpf = useMemo(() => maskCPF(membro?.cpf ?? null), [membro?.cpf]);
+  const cpf = useMemo(() => maskCPF(membro?.cpf ?? ""), [membro?.cpf]);
   const cep = useMemo(
-    () => maskCEP(membro?.endereco?.cep ?? null),
+    () => maskCEP(membro?.endereco?.cep ?? ""),
     [membro?.endereco?.cep]
   );
 
@@ -391,6 +347,7 @@ export default function VerMembroPage() {
     () => calcularIdade(membro?.dataNascimento ?? null),
     [membro?.dataNascimento]
   );
+
   const idadeTxt = useMemo(() => formatarIdade(idade), [idade]);
 
   function openModal(kind: "inativar" | "ativar" | "excluir") {
@@ -466,6 +423,7 @@ export default function VerMembroPage() {
       where("membroId", "==", mId),
       limit(1)
     );
+
     const snap = await getDocs(qy);
     return !snap.empty;
   }
@@ -479,6 +437,7 @@ export default function VerMembroPage() {
       setSucesso(null);
 
       const temHistorico = await membroTemHistoricoCeia(memberId);
+
       if (temHistorico) {
         setErro(
           "Não é possível excluir definitivamente: este membro possui histórico (Santa Ceia). Use “Inativar” para manter os relatórios consistentes."
@@ -544,6 +503,7 @@ export default function VerMembroPage() {
                 >
                   {statusLabel}
                 </span>
+
                 {idadeTxt ? (
                   <>
                     {" "}
@@ -787,6 +747,7 @@ export default function VerMembroPage() {
               <p className="text-gray-700">
                 Tem certeza que deseja <b>inativar</b> o membro <b>{nome}</b>?
               </p>
+
               <p className="text-sm text-gray-600">
                 Isso mantém o histórico e evita inconsistência nas estatísticas.
               </p>
@@ -800,6 +761,7 @@ export default function VerMembroPage() {
                 >
                   Cancelar
                 </button>
+
                 <button
                   type="button"
                   onClick={() => void setStatus("Inativo")}
@@ -827,6 +789,7 @@ export default function VerMembroPage() {
                 >
                   Cancelar
                 </button>
+
                 <button
                   type="button"
                   onClick={() => void setStatus("Ativo")}
@@ -845,6 +808,7 @@ export default function VerMembroPage() {
                 Você está prestes a <b>excluir definitivamente</b> o membro{" "}
                 <b>{nome}</b>.
               </p>
+
               <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
                 Atenção: isso remove o documento do Firestore. Se este membro já
                 tiver histórico (ex.: Santa Ceia), a exclusão será bloqueada e
@@ -860,6 +824,7 @@ export default function VerMembroPage() {
                 >
                   Cancelar
                 </button>
+
                 <button
                   type="button"
                   onClick={() => void excluirDefinitivo()}

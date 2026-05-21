@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 type UseCepParams = {
   setErro: (value: string | null) => void;
@@ -16,11 +16,15 @@ export function useCep({
   syncFormValue,
 }: UseCepParams) {
   const [isFetchingCep, setIsFetchingCep] = useState(false);
+  const latestRequestRef = useRef(0);
 
   async function buscarCepAuto(cepValue: string) {
     const cepDigits = cepValue.replace(/\D/g, "");
 
     if (cepDigits.length !== 8) return;
+    const requestId = Date.now();
+
+latestRequestRef.current = requestId;
 
     try {
       setIsFetchingCep(true);

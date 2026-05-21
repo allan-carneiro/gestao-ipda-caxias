@@ -1,7 +1,13 @@
 "use client";
+import {
+  maskCEP,
+  maskCPF,
+  maskPhone,
+  onlyDigits,
+} from "@/src/features/membros/utils/masks";
 import { FormSection } from "@/src/features/membros/components/FormSection";
 import { useCep } from "@/src/features/membros/hooks/useCep";
-import { maskCEP, onlyDigits } from "@/src/features/membros/utils/masks";
+
 import { CepInput } from "@/src/features/membros/components/CepInput";
 import { SimpleInput } from "@/src/features/membros/components/SimpleInput";
 import { FormInput } from "@/src/features/membros/components/FormInput";

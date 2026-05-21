@@ -9,6 +9,11 @@ import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
 import { getPaths } from "@/src/lib/demo/paths";
 import { isDemo } from "@/src/lib/auth/permissions";
 import type { UserRole } from "@/src/types/auth";
+import {
+  maskCEP,
+  maskPhone,
+  onlyDigits,
+} from "@/src/features/membros/utils/masks";
 
 type Membro = {
   id: string;
@@ -26,29 +31,6 @@ type Membro = {
   };
   status?: "Ativo" | "Inativo";
 };
-
-function onlyDigits(v: string) {
-  return (v || "").replace(/\D/g, "");
-}
-
-function maskPhone(v: string) {
-  const d = onlyDigits(v).slice(0, 11);
-  if (!d) return "";
-  if (d.length <= 10) {
-    return d
-      .replace(/^(\d{2})(\d)/, "($1) $2")
-      .replace(/(\d{4})(\d)/, "$1-$2");
-  }
-  return d
-    .replace(/^(\d{2})(\d)/, "($1) $2")
-    .replace(/(\d{5})(\d)/, "$1-$2");
-}
-
-function maskCEP(v: string) {
-  const d = onlyDigits(v).slice(0, 8);
-  if (!d) return "";
-  return d.replace(/^(\d{5})(\d)/, "$1-$2");
-}
 
 function formatEndereco(m: Membro) {
   const e = m.endereco || {};
@@ -79,6 +61,7 @@ export default function ListaImpressaoPage() {
         : typeof e === "string" && e.trim()
         ? e
         : fallback;
+
     toast.error(msg.startsWith("Erro:") ? msg : `Erro: ${msg}`);
   }
 
@@ -91,6 +74,7 @@ export default function ListaImpressaoPage() {
   const [busca, setBusca] = useState("");
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+
   const demoMode = useMemo(
     () => !loadingRole && isDemo(userRole ?? undefined),
     [loadingRole, userRole]
@@ -102,12 +86,17 @@ export default function ListaImpressaoPage() {
     async function loadRole() {
       try {
         setLoadingRole(true);
+
         const role = await getUserRoleFromToken();
+
         if (!alive) return;
+
         setUserRole(role);
       } catch (e) {
         console.error(e);
+
         if (!alive) return;
+
         setUserRole(null);
       } finally {
         if (alive) setLoadingRole(false);
@@ -130,7 +119,11 @@ export default function ListaImpressaoPage() {
       try {
         setLoading(true);
 
-        const q = query(collection(db, paths.membros), orderBy("nomeCompleto", "asc"));
+        const q = query(
+          collection(db, paths.membros),
+          orderBy("nomeCompleto", "asc")
+        );
+
         const snap = await getDocs(q);
 
         const arr: Membro[] = snap.docs.map((d) => ({
@@ -141,6 +134,7 @@ export default function ListaImpressaoPage() {
         if (alive) setMembros(arr);
       } catch (e: any) {
         console.error(e);
+
         if (alive) toastErro(e, "Erro ao carregar membros.");
       } finally {
         if (alive) setLoading(false);
@@ -164,11 +158,15 @@ export default function ListaImpressaoPage() {
       .filter((m) => (soAtivos ? (m.status || "Ativo") === "Ativo" : true))
       .filter((m) => {
         if (!b) return true;
+
         const nome = (m.nomeCompleto || "").toLowerCase();
+
         const tel =
           onlyDigits(m.telefoneCelular || "") +
           onlyDigits(m.telefoneResidencial || "");
+
         const end = formatEndereco(m).toLowerCase();
+
         return nome.includes(b) || tel.includes(onlyDigits(b)) || end.includes(b);
       });
   }, [membros, soAtivos, busca]);
@@ -180,7 +178,10 @@ export default function ListaImpressaoPage() {
           <h1 className="text-2xl md:text-3xl font-bold text-blue-700">
             Lista para impressão
           </h1>
-          <p className="text-gray-600 mt-1">Nome + telefone + endereço.</p>
+
+          <p className="text-gray-600 mt-1">
+            Nome + telefone + endereço.
+          </p>
         </div>
 
         <div className="flex gap-2">
@@ -190,6 +191,7 @@ export default function ListaImpressaoPage() {
           >
             Voltar
           </Link>
+
           <button
             type="button"
             onClick={() => {
@@ -236,7 +238,9 @@ export default function ListaImpressaoPage() {
         </div>
 
         {loading || loadingRole ? (
-          <div className="mt-4 text-gray-600">Carregando...</div>
+          <div className="mt-4 text-gray-600">
+            Carregando...
+          </div>
         ) : (
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-sm">
@@ -248,22 +252,33 @@ export default function ListaImpressaoPage() {
                   <th className="py-2">Endereço</th>
                 </tr>
               </thead>
+
               <tbody>
                 {filtrados.map((m, idx) => {
                   const tel =
                     maskPhone(m.telefoneCelular || "") ||
                     maskPhone(m.telefoneResidencial || "") ||
                     "-";
+
                   const end = formatEndereco(m) || "-";
 
                   return (
                     <tr key={m.id} className="border-b">
-                      <td className="py-2 pr-3">{idx + 1}</td>
+                      <td className="py-2 pr-3">
+                        {idx + 1}
+                      </td>
+
                       <td className="py-2 pr-3 font-medium">
                         {m.nomeCompleto || "(Sem nome)"}
                       </td>
-                      <td className="py-2 pr-3">{tel}</td>
-                      <td className="py-2">{end}</td>
+
+                      <td className="py-2 pr-3">
+                        {tel}
+                      </td>
+
+                      <td className="py-2">
+                        {end}
+                      </td>
                     </tr>
                   );
                 })}
@@ -286,9 +301,11 @@ export default function ListaImpressaoPage() {
           .no-print {
             display: none !important;
           }
+
           body {
             background: white !important;
           }
+
           table {
             font-size: 12px;
           }
