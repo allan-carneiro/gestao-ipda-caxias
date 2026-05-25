@@ -1,5 +1,5 @@
 "use client";
-
+import { useCep } from "@/src/features/membros/hooks/useCep";
 import { buildMembroPayload } from "@/src/features/membros/utils/buildMembroPayload";
 import { createMembro } from "@/src/features/membros/services/createMembro";
 import React, { useEffect, useMemo, useState } from "react";
@@ -25,9 +25,28 @@ import type {
   TelCarta,
   Membro,
 } from "@/src/features/membros/types";
-
+import { MembroIdentificacaoCard } from "@/src/features/membros/components/MembroIdentificacaoCard";
+import { MembroContatoCard } from "@/src/features/membros/components/MembroContatoCard";
+import { MembroEnderecoCard } from "@/src/features/membros/components/MembroEnderecoCard";
+import { MembroIgrejaCard } from "@/src/features/membros/components/MembroIgrejaCard";
+import { MembroDadosPessoaisCard } from "@/src/features/membros/components/MembroDadosPessoaisCard";
+import { MembroObservacoesCard } from "@/src/features/membros/components/MembroObservacoesCard";
+import { MembroFotoCadastroCard } from "@/src/features/membros/components/MembroFotoCadastroCard";
+import {
+  Card,
+  Row,
+  Field,
+  inputClass,
+  textareaClass,
+} from "@/src/features/membros/components/FormLayout";
 type FieldErrors = Record<string, string>;
-
+import {
+  calcularIdade,
+  formatarIdade,
+  isStatusValido,
+  normalizeNomeCompleto,
+  isValidCPF,
+} from "@/src/features/membros/utils/memberHelpers";
 const IPDA_PASTOR_OPCOES = ["", "IPDA Caxias", "IPDA — Pastor"] as const;
 
 const CARGOS = [
@@ -42,58 +61,6 @@ const CARGOS = [
   "Instrumentista",
 ] as const;
 
-function isStatusValido(v: any): v is Status {
-  return v === "Ativo" || v === "Inativo";
-}
-
-function isValidDate(d: Date) {
-  return d instanceof Date && !Number.isNaN(d.getTime());
-}
-
-function parseBRToISO(br: string) {
-  const m = String(br || "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-  const [, dd, mm, yyyy] = m;
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function parseNascimentoToDate(v?: string | null) {
-  const s = String(v ?? "").trim();
-  if (!s) return null;
-
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
-    const iso = parseBRToISO(s);
-    if (!iso) return null;
-    const d = new Date(`${iso}T00:00:00`);
-    return isValidDate(d) ? d : null;
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const d = new Date(`${s}T00:00:00`);
-    return isValidDate(d) ? d : null;
-  }
-
-  const d = new Date(s);
-  return isValidDate(d) ? d : null;
-}
-
-function calcularIdade(dataNasc?: string | null) {
-  const d = parseNascimentoToDate(dataNasc);
-  if (!d) return null;
-
-  const now = new Date();
-  let idade = now.getFullYear() - d.getFullYear();
-  const m = now.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) idade--;
-
-  if (idade < 0 || idade > 130) return null;
-  return idade;
-}
-
-function formatarIdade(idade: number | null) {
-  if (idade === null) return "";
-  return `${idade} ano${idade === 1 ? "" : "s"}`;
-}
 
 export default function NovoMembroPage() {
   const router = useRouter();
@@ -226,103 +193,27 @@ export default function NovoMembroPage() {
   const idade = useMemo(() => calcularIdade(dataNascimento ?? null), [dataNascimento]);
   const idadeTxt = useMemo(() => formatarIdade(idade), [idade]);
 
-  function normalizeNomeCompleto(nome: string) {
-    const cleaned = String(nome ?? "").trim().replace(/\s+/g, " ");
-    if (!cleaned) return "";
-
-    const lowerWords = new Set(["da", "de", "do", "das", "dos", "e"]);
-
-    return cleaned
-      .split(" ")
-      .map((w, i) => {
-        const wl = w.toLowerCase();
-        if (i > 0 && lowerWords.has(wl)) return wl;
-        return wl.charAt(0).toUpperCase() + wl.slice(1);
-      })
-      .join(" ");
-  }
-
-  function isValidCPF(cpfDigits: string) {
-    const cpf = onlyDigits(cpfDigits);
-    if (cpf.length !== 11) return false;
-    if (/^(\d)\1{10}$/.test(cpf)) return false;
-
-    const calcDigit = (base: string, factorStart: number) => {
-      let sum = 0;
-      for (let i = 0; i < base.length; i++) {
-        sum += Number(base[i]) * (factorStart - i);
-      }
-
-      const mod = sum % 11;
-      return mod < 2 ? 0 : 11 - mod;
-    };
-
-    const d1 = calcDigit(cpf.slice(0, 9), 10);
-    const d2 = calcDigit(cpf.slice(0, 9) + String(d1), 11);
-
-    return cpf.endsWith(`${d1}${d2}`);
-  }
 
   function clearErrors() {
     setErro(null);
     setSucesso(null);
     setFieldErrors({});
   }
+function syncCepFormValue(
+  field: "logradouro" | "bairro" | "cidade" | "uf",
+  value: string
+) {
+  if (field === "logradouro") setLogradouro(value);
+  if (field === "bairro") setBairro(value);
+  if (field === "cidade") setCidade(value);
+  if (field === "uf") setUf(value);
+}
 
-  async function fetchJsonNoStore(url: string) {
-    const res = await fetch(url, { cache: "no-store" });
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    return res.json();
-  }
-
-  async function buscarCepAuto(cepValue: string) {
-    const cepDigits = onlyDigits(cepValue);
-    if (cepDigits.length !== 8) return;
-
-    try {
-      setErro(null);
-
-      let data: any;
-
-      try {
-        data = await fetchJsonNoStore(`https://viacep.com.br/ws/${cepDigits}/json/`);
-
-        if (data?.erro) {
-          toast.error("CEP não encontrado.");
-          setErro("CEP não encontrado.");
-          return;
-        }
-      } catch {
-        const b = await fetchJsonNoStore(
-          `https://brasilapi.com.br/api/cep/v1/${cepDigits}`
-        );
-
-        data = {
-          logradouro: b?.street ?? "",
-          bairro: b?.neighborhood ?? "",
-          localidade: b?.city ?? "",
-          uf: b?.state ?? "",
-        };
-      }
-
-      setLogradouro(data.logradouro || "");
-      setBairro(data.bairro || "");
-      setCidade(data.localidade || "");
-      setUf(data.uf || "");
-
-      toast.success("CEP preenchido automaticamente.");
-    } catch (err) {
-      console.error(err);
-      toastErro(
-        err,
-        "Serviço de CEP indisponível. Digite o endereço manualmente ou tente novamente."
-      );
-    }
-  }
+const { buscarCepAuto, isFetchingCep } = useCep({
+  setErro,
+  toastErro,
+  syncFormValue: syncCepFormValue,
+});
 
   function validarFormulario(): boolean {
     const errors: FieldErrors = {};
@@ -656,219 +547,46 @@ export default function NovoMembroPage() {
                 </Field>
               </Row>
             </Card>
+<MembroIdentificacaoCard
+  nomeCompleto={nomeCompleto}
+  dataNascimento={dataNascimento}
+  cpf={cpf}
+  rg={rg}
+  estadoCivil={estadoCivil}
+  nomeConjuge={nomeConjuge}
+  idadeTxt={idadeTxt}
+  isBusy={formDisabled}
+  inputClass={inputClass}
+  getFieldError={(field) => fieldErrors[field]}
+  hasFieldError={(field) => !!fieldErrors[field]}
+  maskCPF={maskCPF}
+  setNomeCompleto={setNomeCompleto}
+  setDataNascimento={setDataNascimento}
+  setCpf={setCpf}
+  setRg={setRg}
+  setEstadoCivil={setEstadoCivil}
+  setNomeConjuge={setNomeConjuge}
+/>
+<MembroContatoCard
+  telefoneCelular={telefoneCelular}
+  telefoneResidencial={telefoneResidencial}
+  email={email}
+  isBusy={formDisabled}
+  inputClass={inputClass}
+  getFieldError={(field) => fieldErrors[field]}
+  hasFieldError={(field) => !!fieldErrors[field]}
+  maskPhone={maskPhone}
+  setTelefoneCelular={setTelefoneCelular}
+  setTelefoneResidencial={setTelefoneResidencial}
+  setEmail={setEmail}
+  syncFormValue={(field, value) => {
+    if (field === "telefoneCelular") {
+      setTelefoneCelular(value);
+    }
+  }}
+/>
 
-            <Card title="Identificação">
-              <Row>
-                <Field label="Nome completo *" error={fieldErrors.nomeCompleto}>
-                  <input
-                    value={nomeCompleto}
-                    onChange={(e) => setNomeCompleto(e.target.value)}
-                    className={inputClass(!!fieldErrors.nomeCompleto)}
-                    disabled={formDisabled}
-                  />
-                </Field>
 
-                <Field label="Data de nascimento *" error={fieldErrors.dataNascimento}>
-                  <input
-                    type="date"
-                    value={dataNascimento}
-                    onChange={(e) => setDataNascimento(e.target.value)}
-                    className={inputClass(!!fieldErrors.dataNascimento)}
-                    disabled={formDisabled}
-                  />
-
-                  <p className="mt-2 text-xs text-gray-600">
-                    Idade (automática):{" "}
-                    <span className="font-semibold">{idadeTxt || "—"}</span>
-                  </p>
-                </Field>
-
-                <Field label="CPF *" error={fieldErrors.cpf}>
-                  <input
-                    value={cpf}
-                    onChange={(e) => setCpf(maskCPF(e.target.value))}
-                    className={inputClass(!!fieldErrors.cpf)}
-                    inputMode="numeric"
-                    placeholder="000.000.000-00"
-                    disabled={formDisabled}
-                  />
-                </Field>
-              </Row>
-
-              <Row>
-                <Field label="RG">
-                  <input
-                    value={rg}
-                    onChange={(e) => setRg(e.target.value)}
-                    className={inputClass(false)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="Estado civil">
-                  <select
-                    value={estadoCivil}
-                    onChange={(e) => setEstadoCivil(e.target.value as EstadoCivil)}
-                    className={inputClass(false)}
-                    disabled={formDisabled}
-                  >
-                    <option>Solteiro(a)</option>
-                    <option>Casado(a)</option>
-                    <option>União estável</option>
-                    <option>Divorciado(a)</option>
-                    <option>Viúvo(a)</option>
-                  </select>
-                </Field>
-
-                <Field label="Nome do cônjuge">
-                  <input
-                    value={nomeConjuge}
-                    onChange={(e) => setNomeConjuge(e.target.value)}
-                    className={inputClass(false)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-              </Row>
-            </Card>
-
-            <Card title="Contato">
-              <Row>
-                <Field label="Telefone celular *" error={fieldErrors.telefoneCelular}>
-                  <input
-                    value={telefoneCelular}
-                    onChange={(e) => setTelefoneCelular(maskPhone(e.target.value))}
-                    className={inputClass(!!fieldErrors.telefoneCelular)}
-                    inputMode="numeric"
-                    placeholder="(21) 90000-0000"
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="Telefone residencial">
-                  <input
-                    value={telefoneResidencial}
-                    onChange={(e) => setTelefoneResidencial(maskPhone(e.target.value))}
-                    className={inputClass(false)}
-                    inputMode="numeric"
-                    placeholder="(21) 0000-0000"
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="E-mail">
-                  <input
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className={inputClass(false)}
-                    type="email"
-                    placeholder="exemplo@dominio.com"
-                    disabled={formDisabled}
-                  />
-                </Field>
-              </Row>
-            </Card>
-
-            <Card title="Endereço">
-              <Row>
-                <Field label="Logradouro *" error={fieldErrors.logradouro}>
-                  <input
-                    value={logradouro}
-                    onChange={(e) => setLogradouro(e.target.value)}
-                    className={inputClass(!!fieldErrors.logradouro)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="Número *" error={fieldErrors.numero}>
-                  <input
-                    value={numero}
-                    onChange={(e) => setNumero(e.target.value)}
-                    className={inputClass(!!fieldErrors.numero)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="Complemento">
-                  <input
-                    value={complemento}
-                    onChange={(e) => setComplemento(e.target.value)}
-                    className={inputClass(false)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-              </Row>
-
-              <Row>
-                <Field label="Lote">
-                  <input
-                    value={lote}
-                    onChange={(e) => setLote(e.target.value)}
-                    className={inputClass(false)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="Quadra">
-                  <input
-                    value={quadra}
-                    onChange={(e) => setQuadra(e.target.value)}
-                    className={inputClass(false)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="Bairro *" error={fieldErrors.bairro}>
-                  <input
-                    value={bairro}
-                    onChange={(e) => setBairro(e.target.value)}
-                    className={inputClass(!!fieldErrors.bairro)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-              </Row>
-
-              <Row>
-                <Field label="Cidade *" error={fieldErrors.cidade}>
-                  <input
-                    value={cidade}
-                    onChange={(e) => setCidade(e.target.value)}
-                    className={inputClass(!!fieldErrors.cidade)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="UF *" error={fieldErrors.uf}>
-                  <input
-                    value={uf}
-                    onChange={(e) => setUf(e.target.value)}
-                    className={inputClass(!!fieldErrors.uf)}
-                    placeholder="Ex.: RJ"
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="CEP">
-                  <input
-                    value={cep}
-                    onChange={(e) => {
-                      const value = maskCEP(e.target.value);
-
-                      setCep(value);
-
-                      const digits = onlyDigits(value);
-
-                      if (digits.length === 8) {
-                        buscarCepAuto(value);
-                      }
-                    }}
-                    className={inputClass(false)}
-                    inputMode="numeric"
-                    placeholder="00000-000"
-                    disabled={formDisabled}
-                  />
-                </Field>
-              </Row>
-            </Card>
 
             <Card title="Igreja">
               <Row>
@@ -934,124 +652,42 @@ export default function NovoMembroPage() {
                 </Field>
               </Row>
             </Card>
+<MembroDadosPessoaisCard
+  naturalidade={naturalidade}
+  escolaridade={escolaridade}
+  profissao={profissao}
+  filhosQtd={filhosQtd}
+  netosQtd={netosQtd}
+  status={status}
+  statusError={fieldErrors.status}
+  isBusy={formDisabled}
+  inputClass={inputClass}
+  setNaturalidade={setNaturalidade}
+  setEscolaridade={setEscolaridade}
+  setProfissao={setProfissao}
+  setFilhosQtd={setFilhosQtd}
+  setNetosQtd={setNetosQtd}
+  setStatus={setStatus}
+/>
+          <MembroFotoCadastroCard
+  fotoUrl={fotoUrl}
+  uploadingFoto={uploadingFoto}
+  disabled={formDisabled}
+  onUploadFoto={handleUploadFoto}
+  onInvalidImage={() => {
+    const msg = "Selecione uma imagem válida.";
 
-            <Card title="Dados pessoais">
-              <Row>
-                <Field label="Naturalidade">
-                  <input
-                    value={naturalidade}
-                    onChange={(e) => setNaturalidade(e.target.value)}
-                    className={inputClass(false)}
-                    disabled={formDisabled}
-                  />
-                </Field>
+    toast.error(msg);
+    setErro(msg);
+  }}
+/>
 
-                <Field label="Escolaridade">
-                  <input
-                    value={escolaridade}
-                    onChange={(e) => setEscolaridade(e.target.value)}
-                    className={inputClass(false)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="Profissão">
-                  <input
-                    value={profissao}
-                    onChange={(e) => setProfissao(e.target.value)}
-                    className={inputClass(false)}
-                    disabled={formDisabled}
-                  />
-                </Field>
-              </Row>
-
-              <Row>
-                <Field label="Filhos (qtd.)">
-                  <input
-                    value={filhosQtd}
-                    onChange={(e) => setFilhosQtd(e.target.value)}
-                    className={inputClass(false)}
-                    inputMode="numeric"
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="Netos (qtd.)">
-                  <input
-                    value={netosQtd}
-                    onChange={(e) => setNetosQtd(e.target.value)}
-                    className={inputClass(false)}
-                    inputMode="numeric"
-                    disabled={formDisabled}
-                  />
-                </Field>
-
-                <Field label="Situação (Status) *" error={fieldErrors.status}>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as Status)}
-                    className={inputClass(!!fieldErrors.status)}
-                    disabled={formDisabled}
-                  >
-                    <option value="Ativo">Ativo</option>
-                    <option value="Inativo">Inativo</option>
-                  </select>
-                </Field>
-              </Row>
-            </Card>
-
-            <Card title="Foto">
-              {fotoUrl && (
-                <div className="mb-4">
-                  <p className="mb-2 text-sm text-gray-600">Prévia da foto:</p>
-
-                  <img
-                    src={fotoUrl}
-                    alt="Foto do membro"
-                    className="h-28 rounded-xl border object-cover"
-                  />
-                </div>
-              )}
-
-              <input
-                type="file"
-                accept="image/*"
-                disabled={formDisabled}
-                onChange={async (e) => {
-                  const input = e.currentTarget;
-                  const file = input.files?.[0];
-
-                  input.value = "";
-
-                  if (!file) return;
-
-                  if (!file.type.startsWith("image/")) {
-                    const msg = "Selecione uma imagem válida.";
-                    setErro(msg);
-                    toast.error(msg);
-                    return;
-                  }
-
-                  await handleUploadFoto(file);
-                }}
-                className="block w-full rounded-xl border p-2"
-              />
-
-              <p className="mt-2 text-xs text-gray-500">
-                {uploadingFoto ? "Enviando foto…" : "Formatos: JPG/PNG. Envio imediato."}
-              </p>
-            </Card>
-
-            <Card title="Observações">
-              <textarea
-                value={observacoes}
-                onChange={(e) => setObservacoes(e.target.value)}
-                className={textareaClass(false)}
-                placeholder="Observações gerais sobre o membro…"
-                disabled={formDisabled}
-              />
-            </Card>
-
+        <MembroObservacoesCard
+  value={observacoes}
+  disabled={formDisabled}
+  textareaClass={textareaClass}
+  onChange={setObservacoes}
+/>
             <div className="flex flex-col gap-3 md:flex-row">
               <button
                 disabled={formDisabled}
@@ -1111,33 +747,3 @@ export default function NovoMembroPage() {
   );
 }
 
-function inputClass(isError: boolean) {
-  return `inputBase ${isError ? "inputError" : ""}`;
-}
-
-function textareaClass(isError: boolean) {
-  return `textareaBase ${isError ? "inputError" : ""}`;
-}
-
-function Card(props: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-3xl bg-white p-5 shadow md:p-7">
-      <h2 className="text-lg font-bold text-gray-900">{props.title}</h2>
-      <div className="mt-4 space-y-4">{props.children}</div>
-    </div>
-  );
-}
-
-function Row(props: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{props.children}</div>;
-}
-
-function Field(props: { label: string; children: React.ReactNode; error?: string }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700">{props.label}</label>
-      <div className="mt-2">{props.children}</div>
-      {props.error ? <p className="mt-2 text-sm text-red-600">{props.error}</p> : null}
-    </div>
-  );
-}

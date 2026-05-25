@@ -1,156 +1,70 @@
 "use client";
+
+import { MembroDocumentosCard } from "@/src/features/membros/components/MembroDocumentosCard";
+import { MembroObservacoesCard } from "@/src/features/membros/components/MembroObservacoesCard";
+import { MembroContatoCard } from "@/src/features/membros/components/MembroContatoCard";
+import { MembroEnderecoCard } from "@/src/features/membros/components/MembroEnderecoCard";
+import { MembroIgrejaCard } from "@/src/features/membros/components/MembroIgrejaCard";
+import { MembroDadosPessoaisCard } from "@/src/features/membros/components/MembroDadosPessoaisCard";
+import { MembroIdentificacaoCard } from "@/src/features/membros/components/MembroIdentificacaoCard";
+import React, { useEffect, useMemo, useState } from "react";
+import { doc, getDoc } from "firebase/firestore";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+
+import AuthGuard from "@/app/components/AuthGuard";
+import { useToast } from "@/app/components/ToastProvider";
+
+import { db } from "@/src/lib/firebase";
+import { PUBLIC_ENV } from "@/src/lib/publicEnv";
+import { uploadImageToCloudinary } from "@/src/lib/cloudinary";
+import { cleanMembroPayload } from "@/src/lib/validators";
+import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
+import { getPaths } from "@/src/lib/demo/paths";
+import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
+
+import type { UserRole } from "@/src/types/auth";
+import type {
+  EstadoCivil,
+  Status,
+  Membro,
+} from "@/src/features/membros/types";
+
 import {
   maskCEP,
   maskCPF,
   maskPhone,
   onlyDigits,
 } from "@/src/features/membros/utils/masks";
-import { FormSection } from "@/src/features/membros/components/FormSection";
+
+import {
+  Card,
+  Row,
+  Field,
+  inputClass,
+  textareaClass,
+} from "@/src/features/membros/components/FormLayout";
 import { useCep } from "@/src/features/membros/hooks/useCep";
-
-import { CepInput } from "@/src/features/membros/components/CepInput";
-import { SimpleInput } from "@/src/features/membros/components/SimpleInput";
-import { FormInput } from "@/src/features/membros/components/FormInput";
-import { useForm } from "react-hook-form";
-
-import { zodResolver } from "@hookform/resolvers/zod";
-
+import { useMembroForm } from "@/src/features/membros/hooks/useMembroForm";
 import {
   membroSchema,
   type MembroFormData,
 } from "@/src/features/membros/schemas/membroSchema";
-import {
-  validateMembroForm,
-} from "@/src/features/membros/utils/validateMembroForm";
-import { useMembroForm } from "@/src/features/membros/hooks/useMembroForm";
+import { validateMembroForm } from "@/src/features/membros/utils/validateMembroForm";
 import { buildUpdateMembroAudit } from "@/src/features/membros/utils/buildUpdateMembroAudit";
 import { updateMembro } from "@/src/features/membros/services/updateMembro";
 import { buildUpdateMembroPayload } from "@/src/features/membros/utils/buildUpdateMembroPayload";
-import React, { useEffect, useMemo, useState } from "react";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { db } from "@/src/lib/firebase";
-import AuthGuard from "@/app/components/AuthGuard";
-import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { PUBLIC_ENV } from "@/src/lib/publicEnv";
-import { uploadImageToCloudinary } from "@/src/lib/cloudinary";
-import { useToast } from "@/app/components/ToastProvider";
-import { cleanMembroPayload } from "@/src/lib/validators";
-import { getUserRoleFromToken } from "@/src/lib/auth/getUserRole";
-import { getPaths } from "@/src/lib/demo/paths";
-import { canEditMembers, isDemo } from "@/src/lib/auth/permissions";
-import type { UserRole } from "@/src/types/auth";
-
-type EstadoCivil =
-  | "Solteiro(a)"
-  | "Casado(a)"
-  | "Divorciado(a)"
-  | "Viúvo(a)"
-  | "União estável";
-
-type Status = "Ativo" | "Inativo";
-
-type Membro = {
-  nomeCompleto?: string;
-  dataNascimento?: string;
-  cpf?: string;
-  rg?: string;
-  estadoCivil?: EstadoCivil;
-  nomeConjuge?: string | null;
-
-  telefoneCelular?: string;
-  telefoneResidencial?: string | null;
-  email?: string | null;
-
-  endereco?: {
-    logradouro?: string;
-    numero?: string;
-    complemento?: string | null;
-    lote?: string | null;
-    quadra?: string | null;
-    bairro?: string;
-    cidade?: string;
-    estado?: string;
-    cep?: string | null;
-  };
-
-  dataBatismo?: string | null;
-  campo?: string;
-  congregacao?: string;
-  pastor?: string;
-  cargoEclesiastico?: string;
-
-  naturalidade?: string | null;
-  escolaridade?: string | null;
-  profissao?: string | null;
-  filhosQtd?: number | null;
-  netosQtd?: number | null;
-
-  status?: Status;
-  observacoes?: string | null;
-
-  fotoUrl?: string | null;
-  anexos?: any[];
-
-  updatedAt?: string;
-};
+import {
+  calcularIdade,
+  formatarIdade,
+  isStatusValido,
+  normalizeNomeCompleto,
+  isValidCPF,
+} from "@/src/features/membros/utils/memberHelpers";
 
 type FieldErrors = Record<string, string>;
-
-function isStatusValido(v: any): v is Status {
-  return v === "Ativo" || v === "Inativo";
-}
-
-function isValidDate(d: Date) {
-  return d instanceof Date && !Number.isNaN(d.getTime());
-}
-
-function parseBRToISO(br: string) {
-  const m = String(br || "")
-    .trim()
-    .match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-  const [, dd, mm, yyyy] = m;
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function parseNascimentoToDate(v?: string | null) {
-  const s = String(v ?? "").trim();
-  if (!s) return null;
-
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
-    const iso = parseBRToISO(s);
-    if (!iso) return null;
-    const d = new Date(`${iso}T00:00:00`);
-    return isValidDate(d) ? d : null;
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const d = new Date(`${s}T00:00:00`);
-    return isValidDate(d) ? d : null;
-  }
-
-  const d = new Date(s);
-  return isValidDate(d) ? d : null;
-}
-
-function calcularIdade(dataNasc?: string | null) {
-  const d = parseNascimentoToDate(dataNasc);
-  if (!d) return null;
-
-  const now = new Date();
-  let idade = now.getFullYear() - d.getFullYear();
-  const m = now.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) idade--;
-
-  if (idade < 0 || idade > 130) return null;
-  return idade;
-}
-
-function formatarIdade(idade: number | null) {
-  if (idade === null) return "";
-  return `${idade} ano${idade === 1 ? "" : "s"}`;
-}
 
 export default function EditarMembroPage() {
   const router = useRouter();
@@ -161,67 +75,50 @@ export default function EditarMembroPage() {
 
   const [loadingRole, setLoadingRole] = useState(true);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
-const form = useForm<MembroFormData>({
-  resolver: zodResolver(membroSchema),
 
-  defaultValues: {
-    nomeCompleto: "",
-    dataNascimento: "",
-    cpf: "",
-    telefoneCelular: "",
-    logradouro: "",
-    numero: "",
-    bairro: "",
-    cidade: "",
-    uf: "",
-    status: "",
-  },
-});
-function syncFormValue(field: keyof MembroFormData, value: string) {
-  if (field === "nomeCompleto") setNomeCompleto(value);
-  if (field === "dataNascimento") setDataNascimento(value);
-  if (field === "cpf") setCpf(value);
-  if (field === "telefoneCelular") setTelefoneCelular(value);
-  if (field === "logradouro") setLogradouro(value);
-  if (field === "numero") setNumero(value);
-  if (field === "bairro") setBairro(value);
-  if (field === "cidade") setCidade(value);
-  if (field === "uf") setUf(value);
-
-  form.setValue(field, value, {
-    shouldValidate: true,
-    shouldDirty: true,
+  const form = useForm<MembroFormData>({
+    resolver: zodResolver(membroSchema),
+    defaultValues: {
+      nomeCompleto: "",
+      dataNascimento: "",
+      cpf: "",
+      telefoneCelular: "",
+      logradouro: "",
+      numero: "",
+      bairro: "",
+      cidade: "",
+      uf: "",
+      status: "",
+    },
   });
-}
-function getFieldError(field: keyof MembroFormData) {
-  return zodErrors[field]?.message || fieldErrors[field];
-}
-function hasFieldError(field: keyof MembroFormData) {
-  return !!getFieldError(field);
-}
-const {
-  formState: { errors: zodErrors },
-} = form;
+
+  const {
+    formState: { errors: zodErrors },
+  } = form;
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [erro, setErro] = useState<string | null>(null);
-const { buscarCepAuto, isFetchingCep } = useCep({
-  setErro,
-  toastErro,
-  syncFormValue,
-});
-  const [sucesso, setSucesso] = useState<string | null>(null);
+  const {
+    erro,
+    sucesso,
+    showError,
+    showSuccess,
+    clearMessages: clearFormMessages,
+  } = useMembroForm();
+
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const [uploadingFoto, setUploadingFoto] = useState(false);
   const [uploadingAnexos, setUploadingAnexos] = useState(false);
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
+
   const allowEditMembers = useMemo(
     () => canEditMembers(userRole ?? undefined),
     [userRole]
   );
+
   const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
 
   const [membroOriginal, setMembroOriginal] = useState<Membro | null>(null);
@@ -271,6 +168,31 @@ const { buscarCepAuto, isFetchingCep } = useCep({
     uploadingAnexos ||
     !allowEditMembers;
 
+  function syncFormValue(field: keyof MembroFormData, value: string) {
+    if (field === "nomeCompleto") setNomeCompleto(value);
+    if (field === "dataNascimento") setDataNascimento(value);
+    if (field === "cpf") setCpf(value);
+    if (field === "telefoneCelular") setTelefoneCelular(value);
+    if (field === "logradouro") setLogradouro(value);
+    if (field === "numero") setNumero(value);
+    if (field === "bairro") setBairro(value);
+    if (field === "cidade") setCidade(value);
+    if (field === "uf") setUf(value);
+
+    form.setValue(field, value, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+  }
+
+  function getFieldError(field: keyof MembroFormData) {
+    return zodErrors[field]?.message || fieldErrors[field];
+  }
+
+  function hasFieldError(field: keyof MembroFormData) {
+    return !!getFieldError(field);
+  }
+
   function toastErro(e: any, fallback: string) {
     const msg =
       typeof e?.message === "string" && e.message.trim()
@@ -280,15 +202,34 @@ const { buscarCepAuto, isFetchingCep } = useCep({
         : fallback;
 
     const finalMsg = msg.startsWith("Erro:") ? msg : `Erro: ${msg}`;
+
     toast.error(finalMsg);
-    setErro(finalMsg);
+    showError(finalMsg);
   }
 
   function toastOk(msg: string) {
     toast.success(msg);
-    setSucesso(msg);
-    setTimeout(() => setSucesso(null), 1200);
+    showSuccess(msg);
+
+    setTimeout(() => clearFormMessages(), 1200);
   }
+
+  function clearPageMessages() {
+    setFieldErrors({});
+    clearFormMessages();
+  }
+
+  const { buscarCepAuto, isFetchingCep } = useCep({
+    setErro: (message) => {
+      if (message) {
+        showError(message);
+      } else {
+        clearFormMessages();
+      }
+    },
+    toastErro,
+    syncFormValue,
+  });
 
   async function runAction(opts: {
     busySetter?: (v: boolean) => void;
@@ -298,7 +239,9 @@ const { buscarCepAuto, isFetchingCep } = useCep({
   }) {
     try {
       opts.busySetter?.(true);
+
       await opts.fn();
+
       if (opts.success) toastOk(opts.success);
     } catch (e: any) {
       console.error(e);
@@ -308,100 +251,32 @@ const { buscarCepAuto, isFetchingCep } = useCep({
     }
   }
 
-
-  function normalizeNomeCompleto(nome: string) {
-    const cleaned = String(nome ?? "")
-      .trim()
-      .replace(/\s+/g, " ");
-
-    if (!cleaned) return "";
-
-    const lowerWords = new Set(["da", "de", "do", "das", "dos", "e"]);
-
-    return cleaned
-      .split(" ")
-      .map((w, i) => {
-        const wl = w.toLowerCase();
-        if (i > 0 && lowerWords.has(wl)) return wl;
-        return wl.charAt(0).toUpperCase() + wl.slice(1);
-      })
-      .join(" ");
-  }
-
-  function maskCPF(v: string) {
-    const d = onlyDigits(v).slice(0, 11);
-    return d
-      .replace(/^(\d{3})(\d)/, "$1.$2")
-      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-      .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
-  }
-
- 
-
-  function maskPhone(v: string) {
-    const d = onlyDigits(v).slice(0, 11);
-    if (!d) return "";
-    if (d.length <= 10) {
-      return d
-        .replace(/^(\d{2})(\d)/, "($1) $2")
-        .replace(/(\d{4})(\d)/, "$1-$2");
-    }
-    return d
-      .replace(/^(\d{2})(\d)/, "($1) $2")
-      .replace(/(\d{5})(\d)/, "$1-$2");
-  }
-
-  function isValidCPF(cpfDigits: string) {
-    const cpf2 = (cpfDigits || "").replace(/\D/g, "");
-    if (cpf2.length !== 11) return false;
-    if (/^(\d)\1{10}$/.test(cpf2)) return false;
-
-    const calcDigit = (base: string, factorStart: number) => {
-      let sum = 0;
-      for (let i = 0; i < base.length; i++) {
-        sum += Number(base[i]) * (factorStart - i);
-      }
-      const mod = sum % 11;
-      return mod < 2 ? 0 : 11 - mod;
-    };
-
-    const d1 = calcDigit(cpf2.slice(0, 9), 10);
-    const d2 = calcDigit(cpf2.slice(0, 9) + String(d1), 11);
-    return cpf2.endsWith(`${d1}${d2}`);
-  }
-
-
-
-  function clearMessages() {
-  setFieldErrors({});
-}
-
   function validarFormulario(): boolean {
     const errors = validateMembroForm({
-  nomeCompleto,
-  dataNascimento,
-  cpf,
-  telefoneCelular,
-  logradouro,
-  numero,
-  bairro,
-  cidade,
-  uf,
-  status,
-  onlyDigits,
-  isValidCPF,
-  isStatusValido,
-});
-
-   
+      nomeCompleto,
+      dataNascimento,
+      cpf,
+      telefoneCelular,
+      logradouro,
+      numero,
+      bairro,
+      cidade,
+      uf,
+      status,
+      onlyDigits,
+      isValidCPF,
+      isStatusValido,
+    });
 
     setFieldErrors(errors);
 
     if (Object.keys(errors).length > 0) {
       const msg =
         "Há campos obrigatórios pendentes. Verifique os destaques em vermelho.";
-      setErro(msg);
+
+      showError(msg);
       toast.error(msg);
+
       return false;
     }
 
@@ -414,8 +289,7 @@ const { buscarCepAuto, isFetchingCep } = useCep({
     await runAction({
       busySetter: setUploadingFoto,
       fn: async () => {
-        setErro(null);
-        setSucesso(null);
+        clearFormMessages();
 
         const result = await uploadImageToCloudinary(file);
         const url =
@@ -438,8 +312,7 @@ const { buscarCepAuto, isFetchingCep } = useCep({
     await runAction({
       busySetter: setUploadingAnexos,
       fn: async () => {
-        setErro(null);
-        setSucesso(null);
+        clearFormMessages();
 
         const arr = Array.from(files);
         const novos: any[] = [];
@@ -469,10 +342,13 @@ const { buscarCepAuto, isFetchingCep } = useCep({
     async function loadRole() {
       try {
         setLoadingRole(true);
+
         const role = await getUserRoleFromToken();
+
         if (active) setUserRole(role);
       } catch (error) {
         console.error(error);
+
         if (active) setUserRole(null);
       } finally {
         if (active) setLoadingRole(false);
@@ -494,20 +370,23 @@ const { buscarCepAuto, isFetchingCep } = useCep({
 
       try {
         setLoading(true);
-        setErro(null);
+        clearFormMessages();
 
         const ref = doc(db, paths.membros, id);
         const snap = await getDoc(ref);
 
         if (!snap.exists()) {
           const msg = "Membro não encontrado.";
-          setErro(msg);
+
+          showError(msg);
           toast.error(msg);
+
           return;
         }
 
         const m = snap.data() as Membro;
-setMembroOriginal(m);
+
+        setMembroOriginal(m);
         setNomeCompleto(m.nomeCompleto || "");
         setDataNascimento(m.dataNascimento || "");
         setCpf(maskCPF(m.cpf || ""));
@@ -563,23 +442,31 @@ setMembroOriginal(m);
     };
   }, [id, userRole, loadingRole, paths.membros, toast]);
 
-  const idade = useMemo(() => calcularIdade(dataNascimento ?? null), [dataNascimento]);
+  const idade = useMemo(
+    () => calcularIdade(dataNascimento ?? null),
+    [dataNascimento]
+  );
+
   const idadeTxt = useMemo(() => formatarIdade(idade), [idade]);
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
+
     if (saving || !allowEditMembers) return;
 
-    clearMessages();
+    clearPageMessages();
 
     if (uploadingFoto || uploadingAnexos) {
       const msg = "Aguarde terminar o envio de arquivos antes de salvar.";
-      setErro(msg);
+
+      showError(msg);
       toast.error(msg);
+
       return;
     }
 
     const ok = validarFormulario();
+
     if (!ok) return;
 
     await runAction({
@@ -590,59 +477,63 @@ setMembroOriginal(m);
         const now = new Date().toISOString();
 
         if (!isStatusValido(status)) {
-          setFieldErrors((p) => ({ ...p, status: "Selecione a situação (status)." }));
+          setFieldErrors((p) => ({
+            ...p,
+            status: "Selecione a situação (status).",
+          }));
+
           throw new Error("Revise os campos destacados antes de salvar.");
         }
 
         const nomeSeguro = normalizeNomeCompleto(nomeCompleto);
 
         const payload = buildUpdateMembroPayload({
-  nomeSeguro,
+          nomeSeguro,
 
-  dataNascimento,
-  cpf,
-  rg,
+          dataNascimento,
+          cpf,
+          rg,
 
-  estadoCivil,
-  nomeConjuge,
+          estadoCivil,
+          nomeConjuge,
 
-  telefoneCelular,
-  telefoneResidencial,
-  email,
+          telefoneCelular,
+          telefoneResidencial,
+          email,
 
-  logradouro,
-  numero,
-  complemento,
-  lote,
-  quadra,
-  bairro,
-  cidade,
-  uf,
-  cep,
+          logradouro,
+          numero,
+          complemento,
+          lote,
+          quadra,
+          bairro,
+          cidade,
+          uf,
+          cep,
 
-  dataBatismo,
-  campo,
-  congregacao,
-  pastor,
-  cargoEclesiastico,
+          dataBatismo,
+          campo,
+          congregacao,
+          pastor,
+          cargoEclesiastico,
 
-  naturalidade,
-  escolaridade,
-  profissao,
+          naturalidade,
+          escolaridade,
+          profissao,
 
-  filhosQtd,
-  netosQtd,
+          filhosQtd,
+          netosQtd,
 
-  status,
-  observacoes,
+          status,
+          observacoes,
 
-  fotoUrl,
-  anexos,
+          fotoUrl,
+          anexos,
 
-  now,
+          now,
 
-  onlyDigits,
-});
+          onlyDigits,
+        });
 
         const vr = cleanMembroPayload(payload);
 
@@ -671,24 +562,23 @@ setMembroOriginal(m);
           pastor: c.pastor ?? payload.pastor,
           campo: c.campo ?? payload.campo,
 
-          cargoEclesiastico: c.cargoEclesiastico ?? payload.cargoEclesiastico,
+          cargoEclesiastico:
+            c.cargoEclesiastico ?? payload.cargoEclesiastico,
 
           fotoUrl: (c.fotoUrl as any) ?? payload.fotoUrl,
         };
 
         await updateMembro({
-  id,
-  payload: payloadSeguro,
-  paths,
+          id,
+          payload: payloadSeguro,
+          paths,
 
-  audit: buildUpdateMembroAudit({
-    id,
-    original: membroOriginal,
-    updated: payloadSeguro,
-  }),
-});
-
-
+          audit: buildUpdateMembroAudit({
+            id,
+            original: membroOriginal,
+            updated: payloadSeguro,
+          }),
+        });
       },
       success: "Alterações salvas com sucesso!",
       errorFallback: "Erro ao salvar alterações.",
@@ -697,7 +587,9 @@ setMembroOriginal(m);
     setTimeout(() => router.push(`/membros/${id}`), 450);
   }
 
-  const allowSheetsLinks = Boolean(PUBLIC_ENV.SHEETS_1_URL || PUBLIC_ENV.SHEETS_2_URL);
+  const allowSheetsLinks = Boolean(
+    PUBLIC_ENV.SHEETS_1_URL || PUBLIC_ENV.SHEETS_2_URL
+  );
 
   return (
     <AuthGuard>
@@ -708,6 +600,7 @@ setMembroOriginal(m);
               <h1 className="text-2xl md:text-3xl font-bold text-blue-700">
                 Editar membro
               </h1>
+
               <p className="text-gray-600 mt-1">Atualize os dados do membro.</p>
 
               {demoMode ? (
@@ -747,7 +640,9 @@ setMembroOriginal(m);
           </div>
 
           {loading || loadingRole ? (
-            <div className="mt-6 rounded-2xl bg-white p-6 shadow">Carregando...</div>
+            <div className="mt-6 rounded-2xl bg-white p-6 shadow">
+              Carregando...
+            </div>
           ) : (
             <form onSubmit={salvar} className="mt-6 space-y-5">
               {sucesso ? (
@@ -762,468 +657,127 @@ setMembroOriginal(m);
                 </div>
               ) : null}
 
-              <Card title="Identificação">
-                <Row>
-                 <FormInput
-  label="Nome completo *"
-  field="nomeCompleto"
-  value={nomeCompleto}
-  error={getFieldError("nomeCompleto")}
-  onChange={syncFormValue}
+           <MembroIdentificacaoCard
+  nomeCompleto={nomeCompleto}
+  dataNascimento={dataNascimento}
+  cpf={cpf}
+  rg={rg}
+  estadoCivil={estadoCivil}
+  nomeConjuge={nomeConjuge}
+  idadeTxt={idadeTxt}
+  isBusy={isBusy}
+  isFetchingCep={isFetchingCep}
   inputClass={inputClass}
-  Field={Field}
- disabled={isBusy || isFetchingCep}
+  getFieldError={getFieldError}
+  hasFieldError={hasFieldError}
+  syncFormValue={syncFormValue}
+  maskCPF={maskCPF}
+  setDataNascimento={setDataNascimento}
+  setCpf={setCpf}
+  setRg={setRg}
+  setEstadoCivil={setEstadoCivil}
+  setNomeConjuge={setNomeConjuge}
 />
 
-                  <Field
-  label="Data de nascimento *"
-  error={getFieldError("dataNascimento")}
->
-  <input
-    type="date"
-    value={dataNascimento}
-    onChange={(e) => {
-      setDataNascimento(e.target.value);
-      syncFormValue("dataNascimento", e.target.value);
-    }}
-    className={inputClass(hasFieldError("dataNascimento"))}
-    disabled={isBusy}
-  />
-  <p className="mt-2 text-xs text-gray-600">
-    Idade (automática):{" "}
-    <span className="font-semibold">{idadeTxt || "—"}</span>
-  </p>
-</Field>
-
-                  <Field
-  label="CPF *"
-  error={getFieldError("cpf")}
->
-  <input
-    value={cpf}
-    onChange={(e) => {
-      const value = maskCPF(e.target.value);
-
-      setCpf(value);
-
-     syncFormValue("cpf", value);
-    }}
-    className={inputClass(hasFieldError("cpf"))}
-    inputMode="numeric"
-    placeholder="000.000.000-00"
-    disabled={isBusy}
-  />
-</Field>
-                </Row>
-
-                <Row>
-                  <Field label="RG">
-                    <input
-                      value={rg}
-                      onChange={(e) => setRg(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
-
-                  <Field label="Estado civil">
-                    <select
-                      value={estadoCivil}
-                      onChange={(e) => setEstadoCivil(e.target.value as EstadoCivil)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    >
-                      <option>Solteiro(a)</option>
-                      <option>Casado(a)</option>
-                      <option>União estável</option>
-                      <option>Divorciado(a)</option>
-                      <option>Viúvo(a)</option>
-                    </select>
-                  </Field>
-
-                  <Field label="Nome do cônjuge">
-                    <input
-                      value={nomeConjuge}
-                      onChange={(e) => setNomeConjuge(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
-                </Row>
-              </Card>
-
-              <Card title="Contato">
-                <Row>
-                  <Field
-  label="Telefone celular *"
-  error={getFieldError("telefoneCelular")}
->
-  <input
-    value={telefoneCelular}
-    onChange={(e) => {
-      const value = maskPhone(e.target.value);
-
-      setTelefoneCelular(value);
-
-      syncFormValue("telefoneCelular", value);
-    }}
-    className={inputClass(hasFieldError("telefoneCelular"))}
-    inputMode="numeric"
-    disabled={isBusy}
-  />
-</Field>
-
-                  <Field label="Telefone residencial">
-                    <input
-                      value={telefoneResidencial}
-                      onChange={(e) => setTelefoneResidencial(maskPhone(e.target.value))}
-                      className={inputClass(false)}
-                      inputMode="numeric"
-                      placeholder="(21) 0000-0000"
-                      disabled={isBusy}
-                    />
-                  </Field>
-
-                  <Field label="E-mail">
-                    <input
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className={inputClass(false)}
-                      type="email"
-                      disabled={isBusy}
-                    />
-                  </Field>
-                </Row>
-              </Card>
-
-              <Card title="Endereço completo">
-                <FormSection title="Endereço completo">
-                <Row>
-              <FormInput
-  label="Logradouro *"
-  field="logradouro"
-  value={logradouro}
-  error={getFieldError("logradouro")}
-  onChange={syncFormValue}
+          <MembroContatoCard
+  telefoneCelular={telefoneCelular}
+  telefoneResidencial={telefoneResidencial}
+  email={email}
+  isBusy={isBusy}
   inputClass={inputClass}
-  Field={Field}
-  disabled={isBusy}
+  getFieldError={getFieldError}
+  hasFieldError={hasFieldError}
+  maskPhone={maskPhone}
+  setTelefoneCelular={setTelefoneCelular}
+  setTelefoneResidencial={setTelefoneResidencial}
+  setEmail={setEmail}
+  syncFormValue={syncFormValue}
 />
 
-                <FormInput
-  label="Número *"
-  field="numero"
-  value={numero}
-  error={getFieldError("numero")}
-  onChange={syncFormValue}
+           <MembroEnderecoCard
+  logradouro={logradouro}
+  numero={numero}
+  complemento={complemento}
+  lote={lote}
+  quadra={quadra}
+  bairro={bairro}
+  cidade={cidade}
+  uf={uf}
+  cep={cep}
+  isBusy={isBusy}
+  isFetchingCep={isFetchingCep}
   inputClass={inputClass}
-  Field={Field}
-  disabled={isBusy}
-/>
-
-<SimpleInput
-  label="Complemento"
-  value={complemento}
-  onChange={setComplemento}
-  inputClass={inputClass}
-  Field={Field}
-  disabled={isBusy}
-/>
-                </Row>
-
-                <Row>
-                <SimpleInput
-  label="Lote"
-  value={lote}
-  onChange={setLote}
-  inputClass={inputClass}
-  Field={Field}
-  disabled={isBusy}
-/>
-
-<SimpleInput
-  label="Quadra"
-  value={quadra}
-  onChange={setQuadra}
-  inputClass={inputClass}
-  Field={Field}
-  disabled={isBusy}
-/>
-<FormInput
-  label="Bairro *"
-  field="bairro"
-  value={bairro}
-  error={getFieldError("bairro")}
-  onChange={syncFormValue}
-  inputClass={inputClass}
-  Field={Field}
-  disabled={isBusy}
-/>
-                </Row>
-
-                <Row>
-                  <FormInput
-  label="Cidade *"
-  field="cidade"
-  value={cidade}
-  error={getFieldError("cidade")}
-  onChange={syncFormValue}
-  inputClass={inputClass}
-  Field={Field}
-  disabled={isBusy}
-/>
-<FormInput
-  label="UF *"
-  field="uf"
-  value={uf}
-  error={getFieldError("uf")}
-  onChange={syncFormValue}
-  inputClass={inputClass}
-  Field={Field}
-  placeholder="Ex: RJ"
-  disabled={isBusy}
-/>
-<CepInput
-  value={cep}
-  onChange={setCep}
-  onCepComplete={buscarCepAuto}
+  getFieldError={getFieldError}
+  syncFormValue={syncFormValue}
+  setComplemento={setComplemento}
+  setLote={setLote}
+  setQuadra={setQuadra}
+  setCep={setCep}
+  buscarCepAuto={buscarCepAuto}
   maskCEP={maskCEP}
   onlyDigits={onlyDigits}
-  inputClass={inputClass}
-  Field={Field}
-  disabled={isBusy}
-  isLoading={isFetchingCep}
 />
-                </Row>
-                </FormSection>
-              </Card>
+<MembroIgrejaCard
+  dataBatismo={dataBatismo}
+  campo={campo}
+  congregacao={congregacao}
+  pastor={pastor}
+  cargoEclesiastico={cargoEclesiastico}
+  isBusy={isBusy}
+  inputClass={inputClass}
+  setDataBatismo={setDataBatismo}
+  setCampo={setCampo}
+  setCongregacao={setCongregacao}
+  setPastor={setPastor}
+  setCargoEclesiastico={setCargoEclesiastico}
+/>
 
-              <Card title="Igreja">
-                <Row>
-                  <Field label="Data de batismo">
-                    <input
-                      type="date"
-                      value={dataBatismo}
-                      onChange={(e) => setDataBatismo(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
+            <MembroDadosPessoaisCard
+  naturalidade={naturalidade}
+  escolaridade={escolaridade}
+  profissao={profissao}
+  filhosQtd={filhosQtd}
+  netosQtd={netosQtd}
+  status={status}
+  statusError={fieldErrors.status}
+  isBusy={isBusy}
+  inputClass={inputClass}
+  setNaturalidade={setNaturalidade}
+  setEscolaridade={setEscolaridade}
+  setProfissao={setProfissao}
+  setFilhosQtd={setFilhosQtd}
+  setNetosQtd={setNetosQtd}
+  setStatus={setStatus}
+/>
 
-                  <Field label="Campo">
-                    <select
-                      value={campo}
-                      onChange={(e) => setCampo(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    >
-                      <option>Duque de Caxias</option>
-                      <option>Rio de Janeiro</option>
-                    </select>
-                  </Field>
+             <MembroDocumentosCard
+  fotoUrl={fotoUrl}
+  anexos={anexos}
+  isBusy={isBusy}
+  uploadingFoto={uploadingFoto}
+  uploadingAnexos={uploadingAnexos}
+  inputClass={inputClass}
+  onUploadFoto={handleUploadFoto}
+  onUploadAnexos={handleUploadAnexos}
+  onRemoveAnexo={(index) =>
+    setAnexos((prev) =>
+      (prev || []).filter((_: any, idx: number) => idx !== index)
+    )
+  }
+  onInvalidImage={() => {
+    const msg = "Selecione uma imagem válida.";
 
-                  <Field label="Congregação">
-                    <input
-                      value={congregacao}
-                      onChange={(e) => setCongregacao(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
-                </Row>
+    toast.error(msg);
+    showError(msg);
+  }}
+/>
 
-                <Row>
-                  <Field label="Pastor">
-                    <input
-                      value={pastor}
-                      onChange={(e) => setPastor(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
-
-                  <Field label="Cargo eclesiástico">
-                    <input
-                      value={cargoEclesiastico}
-                      onChange={(e) => setCargoEclesiastico(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
-                </Row>
-              </Card>
-
-              <Card title="Dados pessoais">
-                <Row>
-                  <Field label="Naturalidade">
-                    <input
-                      value={naturalidade}
-                      onChange={(e) => setNaturalidade(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
-
-                  <Field label="Escolaridade">
-                    <input
-                      value={escolaridade}
-                      onChange={(e) => setEscolaridade(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
-
-                  <Field label="Profissão">
-                    <input
-                      value={profissao}
-                      onChange={(e) => setProfissao(e.target.value)}
-                      className={inputClass(false)}
-                      disabled={isBusy}
-                    />
-                  </Field>
-                </Row>
-
-                <Row>
-                  <Field label="Filhos (qtd)">
-                    <input
-                      value={filhosQtd}
-                      onChange={(e) => setFilhosQtd(e.target.value)}
-                      className={inputClass(false)}
-                      inputMode="numeric"
-                      disabled={isBusy}
-                    />
-                  </Field>
-
-                  <Field label="Netos (qtd)">
-                    <input
-                      value={netosQtd}
-                      onChange={(e) => setNetosQtd(e.target.value)}
-                      className={inputClass(false)}
-                      inputMode="numeric"
-                      disabled={isBusy}
-                    />
-                  </Field>
-
-                  <Field label="Situação (Status) *" error={fieldErrors.status}>
-                    <select
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value as Status)}
-                      className={inputClass(!!fieldErrors.status)}
-                      disabled={isBusy}
-                    >
-                      <option value="Ativo">Ativo</option>
-                      <option value="Inativo">Inativo</option>
-                    </select>
-                  </Field>
-                </Row>
-              </Card>
-
-              <Card title="Documentos e foto">
-                {fotoUrl ? (
-                  <div className="mb-4">
-                    <p className="text-sm text-gray-600 mb-2">Foto atual:</p>
-                    <img
-                      src={fotoUrl}
-                      alt="Foto do membro"
-                      className="h-28 rounded-xl border object-cover"
-                    />
-                  </div>
-                ) : null}
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Trocar foto {uploadingFoto ? "(enviando...)" : ""}
-                  </label>
-
-                  <input
-                    type="file"
-                    accept="image/*"
-                    disabled={isBusy}
-                    onChange={async (e) => {
-                      const input = e.currentTarget;
-                      const file = input.files?.[0];
-                      input.value = "";
-
-                      if (!file) return;
-                      if (!file.type.startsWith("image/")) {
-                        toast.error("Selecione uma imagem válida.");
-                        setErro("Selecione uma imagem válida.");
-                        return;
-                      }
-
-                      await handleUploadFoto(file);
-                    }}
-                    className={inputClass(false)}
-                  />
-                </div>
-
-                {anexos?.length > 0 && (
-                  <div className="mt-6">
-                    <p className="font-semibold mb-2">Arquivos anexados:</p>
-                    <div className="space-y-2">
-                      {anexos.map((a: any, i: number) => (
-                        <div
-                          key={i}
-                          className="flex items-center justify-between border rounded-lg px-3 py-2"
-                        >
-                          <a
-                            href={a.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-blue-600 underline"
-                          >
-                            {a.nome}
-                          </a>
-
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() =>
-                              setAnexos((prev) =>
-                                (prev || []).filter((_: any, idx: number) => idx !== i)
-                              )
-                            }
-                            className="text-red-600 text-sm disabled:opacity-60"
-                          >
-                            remover
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-6">
-                  <label className="block text-sm font-medium mb-1">
-                    Adicionar documentos {uploadingAnexos ? "(enviando...)" : ""}
-                  </label>
-
-                  <input
-                    type="file"
-                    multiple
-                    disabled={isBusy}
-                    onChange={async (e) => {
-                      const input = e.currentTarget;
-                      const files = input.files;
-                      input.value = "";
-                      if (!files) return;
-
-                      await handleUploadAnexos(files);
-                    }}
-                    className={inputClass(false)}
-                  />
-                </div>
-              </Card>
-
-              <Card title="Observações">
-                <textarea
-                  value={observacoes}
-                  onChange={(e) => setObservacoes(e.target.value)}
-                  className={textareaClass(false)}
-                  placeholder="Observações gerais sobre o membro..."
-                  disabled={isBusy}
-                />
-              </Card>
+           <MembroObservacoesCard
+  value={observacoes}
+  disabled={isBusy}
+  textareaClass={textareaClass}
+  onChange={setObservacoes}
+/> 
 
               <div className="flex flex-col md:flex-row gap-3">
                 <button
@@ -1260,10 +814,12 @@ setMembroOriginal(m);
             background: white;
             outline: none;
           }
+
           .inputError {
             border-color: rgb(248 113 113);
             box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.15);
           }
+
           .textareaBase {
             width: 100%;
             min-height: 120px;
@@ -1276,33 +832,5 @@ setMembroOriginal(m);
         `}</style>
       </main>
     </AuthGuard>
-  );
-}
-
-function inputClass(isError: boolean) {
-  return `inputBase ${isError ? "inputError" : ""}`;
-}
-function textareaClass(isError: boolean) {
-  return `textareaBase ${isError ? "inputError" : ""}`;
-}
-
-function Card(props: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white rounded-3xl shadow p-5 md:p-7">
-      <h2 className="text-lg font-bold text-gray-900">{props.title}</h2>
-      <div className="mt-4 space-y-4">{props.children}</div>
-    </div>
-  );
-}
-function Row(props: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{props.children}</div>;
-}
-function Field(props: { label: string; children: React.ReactNode; error?: string }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700">{props.label}</label>
-      <div className="mt-2">{props.children}</div>
-      {props.error ? <p className="mt-2 text-sm text-red-600">{props.error}</p> : null}
-    </div>
   );
 }

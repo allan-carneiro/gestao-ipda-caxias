@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { buscarCep } from "@/src/shared/services/cepService";
 
 type UseCepParams = {
   setErro: (value: string | null) => void;
@@ -22,19 +23,19 @@ export function useCep({
     const cepDigits = cepValue.replace(/\D/g, "");
 
     if (cepDigits.length !== 8) return;
-    const requestId = Date.now();
 
-latestRequestRef.current = requestId;
+    const requestId = Date.now();
+    latestRequestRef.current = requestId;
 
     try {
       setIsFetchingCep(true);
       setErro(null);
 
-      const res = await fetch(
-        `https://viacep.com.br/ws/${cepDigits}/json/`
-      );
+      const data = await buscarCep(cepDigits);
 
-      const data = await res.json();
+      if (latestRequestRef.current !== requestId) {
+        return;
+      }
 
       if (data?.erro) {
         setErro("CEP não encontrado.");
@@ -45,11 +46,22 @@ latestRequestRef.current = requestId;
       syncFormValue("bairro", data.bairro || "");
       syncFormValue("cidade", data.localidade || "");
       syncFormValue("uf", data.uf || "");
-    } catch (err) {
+     } catch (err) {
+      if (latestRequestRef.current !== requestId) {
+        return;
+      }
+
       console.error(err);
-      toastErro(err, "Erro ao buscar CEP.");
+
+      const userMessage =
+        "Não foi possível buscar o CEP. Verifique o número digitado.";
+
+      setErro(userMessage);
+      toastErro(new Error(userMessage), userMessage);
     } finally {
-      setIsFetchingCep(false);
+      if (latestRequestRef.current === requestId) {
+        setIsFetchingCep(false);
+      }
     }
   }
 

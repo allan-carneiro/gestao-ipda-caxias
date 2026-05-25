@@ -9,12 +9,22 @@ export function useMembroForm() {
     setSucesso(null);
   }
 
+  function showError(message: string) {
+    setErro(message);
+    setSucesso(null);
+  }
+
+  function showSuccess(message: string) {
+    setSucesso(message);
+    setErro(null);
+  }
+
   return {
     erro,
     sucesso,
 
-    setErro,
-    setSucesso,
+    showError,
+    showSuccess,
 
     clearMessages,
   };
