@@ -356,13 +356,15 @@ export async function listarParticipantesCeiaAno(
   role?: UserRole
 ): Promise<SimpleMembroListItem[]> {
   const paths = getPaths(role);
-  const qy = query(collection(db, paths.ceiaRegistros), where("ano", "==", ano));
-  const snap = await getDocs(qy);
 
   const ids: string[] = [];
   const fallbackById = new Map<string, SimpleMembroListItem>();
 
-  for (const d of snap.docs) {
+  // 1. Fonte antiga: registros anuais
+  const qy = query(collection(db, paths.ceiaRegistros), where("ano", "==", ano));
+  const snapAno = await getDocs(qy);
+
+  for (const d of snapAno.docs) {
     const data = d.data() as any;
     const membroId = safeId(data?.membroId);
     if (!membroId) continue;
@@ -379,10 +381,35 @@ export async function listarParticipantesCeiaAno(
     }
   }
 
+  // 2. Fonte mensal: participantes marcados nos meses
+  for (let mes = 1; mes <= 12; mes++) {
+    const ref = collection(db, getCeiaParticipantesPath(role, ano, mes));
+    const qPres = query(ref, where("presente", "==", true));
+    const snapMes = await getDocs(qPres);
+
+    for (const d of snapMes.docs) {
+      const data = d.data() as any;
+      const membroId = extractMembroIdFromControleDoc(d.id, data);
+      if (!membroId) continue;
+
+      ids.push(membroId);
+
+      if (!fallbackById.has(membroId)) {
+        fallbackById.set(membroId, {
+          id: membroId,
+          nome: fallbackNomeFromCeiaDoc(data),
+          dataNascimento: fallbackNascimentoFromCeiaDoc(data),
+          cpf: data?.cpf ?? null,
+        });
+      }
+    }
+  }
+
   const uniqueIds = Array.from(new Set(ids));
   const memberMap = await getMemberLiteMap(uniqueIds, role);
 
   const items: SimpleMembroListItem[] = [];
+
   for (const id of uniqueIds) {
     const fallback = fallbackById.get(id);
     if (fallback) {

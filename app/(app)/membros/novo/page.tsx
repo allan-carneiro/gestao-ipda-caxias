@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import AuthGuard from "@/app/components/AuthGuard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -29,7 +31,6 @@ import {
   formatarIdade,
   isStatusValido,
   normalizeNomeCompleto,
-  isValidCPF,
 } from "@/src/features/membros/utils/memberHelpers";
 
 import { MembroIdentificacaoCard } from "@/src/features/membros/components/MembroIdentificacaoCard";
@@ -46,13 +47,13 @@ import {
   textareaClass,
 } from "@/src/features/membros/components/FormLayout";
 
+import {
+  novoMembroSchema,
+  type NovoMembroFormData,
+} from "@/src/features/membros/schemas/novoMembroSchema";
+
 import type { UserRole } from "@/src/types/auth";
-import type {
-  EstadoCivil,
-  Status,
-  TelCarta,
-  Membro,
-} from "@/src/features/membros/types";
+import type { EstadoCivil, Status, TelCarta, Membro } from "@/src/features/membros/types";
 
 type FieldErrors = Record<string, string>;
 
@@ -74,47 +75,61 @@ export default function NovoMembroPage() {
   const router = useRouter();
   const toast = useToast();
 
+  const form = useForm<NovoMembroFormData>({
+    resolver: zodResolver(novoMembroSchema),
+    defaultValues: {
+      numeroRol: "",
+      ipdaPastor: "",
+      telCarta: "",
+
+      nomeCompleto: "",
+      dataNascimento: "",
+      cpf: "",
+      rg: "",
+
+      estadoCivil: "Solteiro(a)",
+      nomeConjuge: "",
+
+      telefoneCelular: "",
+      telefoneResidencial: "",
+      email: "",
+
+      logradouro: "",
+      numero: "",
+      complemento: "",
+      lote: "",
+      quadra: "",
+      bairro: "",
+      cidade: "",
+      uf: "",
+      cep: "",
+
+      dataBatismo: "",
+      campo: "Duque de Caxias",
+      congregacao: "",
+      pastor: "",
+      cargoEclesiastico: "",
+
+      naturalidade: "",
+      escolaridade: "",
+      profissao: "",
+      filhosQtd: "",
+      netosQtd: "",
+
+      status: "Ativo",
+      observacoes: "",
+    },
+  });
+
   const [loadingRole, setLoadingRole] = useState(true);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  const {
-    erro,
-    sucesso,
-    showError,
-    showSuccess,
-    clearMessages,
-  } = useMembroForm();
+  const { erro, sucesso, showError, showSuccess, clearMessages } =
+    useMembroForm();
 
   const {
-    numeroRol,
-    setNumeroRol,
-    ipdaPastor,
-    setIpdaPastor,
-    telCarta,
-    setTelCarta,
-
-    nomeCompleto,
-    setNomeCompleto,
-    dataNascimento,
-    setDataNascimento,
-    cpf,
-    setCpf,
-    rg,
-    setRg,
-    estadoCivil,
-    setEstadoCivil,
-    nomeConjuge,
-    setNomeConjuge,
-
-    telefoneCelular,
-    setTelefoneCelular,
-    telefoneResidencial,
-    setTelefoneResidencial,
-    email,
-    setEmail,
-
     logradouro,
     setLogradouro,
     numero,
@@ -178,6 +193,7 @@ export default function NovoMembroPage() {
 
   const isBusy = saving || uploadingFoto || loadingRole;
   const formDisabled = isBusy || !allowCreateMembers;
+  const formValues = form.watch();
 
   useEffect(() => {
     let active = true;
@@ -204,6 +220,20 @@ export default function NovoMembroPage() {
       active = false;
     };
   }, []);
+
+  function setFormStringValue(field: keyof NovoMembroFormData) {
+    return (value: any) => {
+      const currentValue = String(form.getValues(field) ?? "");
+
+      const nextValue =
+        typeof value === "function" ? value(currentValue) : value;
+
+      form.setValue(field, nextValue as any, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    };
+  }
 
   function toastErro(e: any, fallback: string) {
     const msg =
@@ -247,8 +277,8 @@ export default function NovoMembroPage() {
   }
 
   const idade = useMemo(
-    () => calcularIdade(dataNascimento ?? null),
-    [dataNascimento]
+    () => calcularIdade(formValues.dataNascimento ?? null),
+    [formValues.dataNascimento]
   );
 
   const idadeTxt = useMemo(() => formatarIdade(idade), [idade]);
@@ -266,6 +296,11 @@ export default function NovoMembroPage() {
     if (field === "bairro") setBairro(value);
     if (field === "cidade") setCidade(value);
     if (field === "uf") setUf(value);
+
+    form.setValue(field, value, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
   }
 
   const { buscarCepAuto, isFetchingCep } = useCep({
@@ -280,56 +315,48 @@ export default function NovoMembroPage() {
     syncFormValue: syncCepFormValue,
   });
 
-  function validarFormulario(): boolean {
-    const errors: FieldErrors = {};
+  function syncLegacyFieldsToForm() {
+    form.setValue("logradouro", logradouro);
+    form.setValue("numero", numero);
+    form.setValue("complemento", complemento);
+    form.setValue("lote", lote);
+    form.setValue("quadra", quadra);
+    form.setValue("bairro", bairro);
+    form.setValue("cidade", cidade);
+    form.setValue("uf", uf);
+    form.setValue("cep", cep);
 
-    if (!nomeCompleto.trim()) errors.nomeCompleto = "Informe o nome completo.";
-    if (!dataNascimento) errors.dataNascimento = "Informe a data de nascimento.";
+    form.setValue("dataBatismo", dataBatismo);
+    form.setValue("campo", campo);
+    form.setValue("congregacao", congregacao);
+    form.setValue("pastor", pastor);
+    form.setValue("cargoEclesiastico", cargoEclesiastico);
 
-    const cpfDigits = onlyDigits(cpf);
+    form.setValue("naturalidade", naturalidade);
+    form.setValue("escolaridade", escolaridade);
+    form.setValue("profissao", profissao);
+    form.setValue("filhosQtd", filhosQtd);
+    form.setValue("netosQtd", netosQtd);
 
-    if (!cpfDigits) errors.cpf = "Informe o CPF.";
-    else if (!isValidCPF(cpfDigits)) errors.cpf = "CPF inválido.";
+    form.setValue("status", status);
+    form.setValue("observacoes", observacoes);
+  }
 
-    if (!logradouro.trim()) errors.logradouro = "Informe o logradouro.";
-    if (!numero.trim()) errors.numero = "Informe o número.";
-    if (!bairro.trim()) errors.bairro = "Informe o bairro.";
-    if (!cidade.trim()) errors.cidade = "Informe a cidade.";
-    if (!uf.trim()) errors.uf = "Informe a UF.";
+  function handleInvalid(errors: any) {
+    const nextErrors: FieldErrors = {};
 
-    const cel = onlyDigits(telefoneCelular);
-
-    if (!cel) errors.telefoneCelular = "Informe o telefone celular.";
-    else if (cel.length < 10) errors.telefoneCelular = "Telefone inválido.";
-
-    if (!cargoEclesiastico.trim()) {
-      errors.cargoEclesiastico = "Selecione o cargo eclesiástico.";
-    }
-
-    if (!isStatusValido(status)) {
-      errors.status = "Selecione a situação (status).";
-    }
-
-    if (numeroRol.trim()) {
-      const n = Number(onlyDigits(numeroRol));
-
-      if (!Number.isFinite(n) || n <= 0) {
-        errors.numeroRol = "Nº do rol inválido.";
+    Object.entries(errors).forEach(([field, error]: any) => {
+      if (error?.message) {
+        nextErrors[field] = error.message;
       }
-    }
+    });
 
-    setFieldErrors(errors);
+    setFieldErrors(nextErrors);
 
-    if (Object.keys(errors).length > 0) {
-      const msg = "Revise os campos destacados antes de salvar.";
+    const msg = "Revise os campos destacados antes de salvar.";
 
-      showError(msg);
-      toast.error(msg);
-
-      return false;
-    }
-
-    return true;
+    showError(msg);
+    toast.error(msg);
   }
 
   async function handleUploadFoto(file: File) {
@@ -367,9 +394,7 @@ export default function NovoMembroPage() {
     });
   }
 
-  async function salvar(e: React.FormEvent) {
-    e.preventDefault();
-
+  async function salvar(data: NovoMembroFormData) {
     if (saving) return;
 
     clearErrors();
@@ -403,17 +428,13 @@ export default function NovoMembroPage() {
       return;
     }
 
-    const ok = validarFormulario();
-
-    if (!ok) return;
-
     await runAction({
       busySetter: setSaving,
       fn: async () => {
-        const cpfDigits = onlyDigits(cpf);
+        const cpfDigits = onlyDigits(data.cpf);
         const now = new Date().toISOString();
 
-        if (!isStatusValido(status)) {
+        if (!isStatusValido(data.status)) {
           setFieldErrors((p) => ({
             ...p,
             status: "Selecione a situação (status).",
@@ -422,54 +443,54 @@ export default function NovoMembroPage() {
           throw new Error("Revise os campos destacados antes de salvar.");
         }
 
-        const statusSeguro: Status = status;
-        const nomeSeguro = normalizeNomeCompleto(nomeCompleto);
+        const statusSeguro: Status = data.status as Status;
+        const nomeSeguro = normalizeNomeCompleto(data.nomeCompleto);
 
         const payload = buildMembroPayload({
           nomeSeguro,
-          dataNascimento,
+          dataNascimento: data.dataNascimento,
           cpfDigits,
-          rg,
+          rg: data.rg ?? "",
 
-          estadoCivil,
-          nomeConjuge,
+          estadoCivil: data.estadoCivil as EstadoCivil,
+          nomeConjuge: data.nomeConjuge ?? "",
 
-          telefoneCelular,
-          telefoneResidencial,
-          email,
+          telefoneCelular: data.telefoneCelular,
+          telefoneResidencial: data.telefoneResidencial ?? "",
+          email: data.email ?? "",
 
-          logradouro,
-          numero,
-          complemento,
-          lote,
-          quadra,
-          bairro,
-          cidade,
-          uf,
-          cep,
+          logradouro: data.logradouro,
+          numero: data.numero,
+          complemento: data.complemento ?? "",
+          lote: data.lote ?? "",
+          quadra: data.quadra ?? "",
+          bairro: data.bairro,
+          cidade: data.cidade,
+          uf: data.uf,
+          cep: data.cep ?? "",
 
-          dataBatismo,
-          campo,
-          congregacao,
-          pastor,
-          cargoEclesiastico,
+          dataBatismo: data.dataBatismo ?? "",
+          campo: data.campo,
+          congregacao: data.congregacao ?? "",
+          pastor: data.pastor ?? "",
+          cargoEclesiastico: data.cargoEclesiastico,
 
-          naturalidade,
-          escolaridade,
-          profissao,
+          naturalidade: data.naturalidade ?? "",
+          escolaridade: data.escolaridade ?? "",
+          profissao: data.profissao ?? "",
 
-          filhosQtd,
-          netosQtd,
+          filhosQtd: data.filhosQtd ?? "",
+          netosQtd: data.netosQtd ?? "",
 
           statusSeguro,
-          observacoes,
+          observacoes: data.observacoes ?? "",
 
           fotoUrl,
           anexos,
 
-          numeroRol,
-          ipdaPastor,
-          telCarta,
+          numeroRol: data.numeroRol ?? "",
+          ipdaPastor: data.ipdaPastor ?? "",
+          telCarta: (data.telCarta ?? "") as TelCarta,
 
           now,
 
@@ -527,6 +548,12 @@ export default function NovoMembroPage() {
     });
   }
 
+  function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
+    syncLegacyFieldsToForm();
+
+    void form.handleSubmit(salvar, handleInvalid)(e);
+  }
+
   return (
     <AuthGuard>
       <main className="min-h-screen bg-gray-100 p-4 md:p-8">
@@ -565,7 +592,7 @@ export default function NovoMembroPage() {
             </div>
           ) : null}
 
-          <form onSubmit={salvar} className="mt-6 space-y-5">
+          <form onSubmit={handleFormSubmit} className="mt-6 space-y-5">
             {sucesso ? (
               <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-green-800">
                 {sucesso}
@@ -580,11 +607,13 @@ export default function NovoMembroPage() {
 
             <Card title="Santa Ceia e Planilhas">
               <Row>
-                <Field label="Nº do rol" error={fieldErrors.numeroRol}>
+                <Field
+                  label="Nº do rol"
+                  error={form.formState.errors.numeroRol?.message}
+                >
                   <input
-                    value={numeroRol}
-                    onChange={(e) => setNumeroRol(e.target.value)}
-                    className={inputClass(!!fieldErrors.numeroRol)}
+                    {...form.register("numeroRol")}
+                    className={inputClass(!!form.formState.errors.numeroRol)}
                     inputMode="numeric"
                     placeholder="Ex.: 391"
                     disabled={formDisabled}
@@ -593,8 +622,7 @@ export default function NovoMembroPage() {
 
                 <Field label="IPDA / Pastor">
                   <select
-                    value={ipdaPastor}
-                    onChange={(e) => setIpdaPastor(e.target.value)}
+                    {...form.register("ipdaPastor")}
                     className={inputClass(false)}
                     disabled={formDisabled}
                   >
@@ -608,8 +636,7 @@ export default function NovoMembroPage() {
 
                 <Field label="Tel. ou Carta">
                   <select
-                    value={telCarta}
-                    onChange={(e) => setTelCarta(e.target.value as TelCarta)}
+                    {...form.register("telCarta")}
                     className={inputClass(false)}
                     disabled={formDisabled}
                   >
@@ -622,41 +649,44 @@ export default function NovoMembroPage() {
             </Card>
 
             <MembroIdentificacaoCard
-              nomeCompleto={nomeCompleto}
-              dataNascimento={dataNascimento}
-              cpf={cpf}
-              rg={rg}
-              estadoCivil={estadoCivil}
-              nomeConjuge={nomeConjuge}
+              nomeCompleto={formValues.nomeCompleto}
+              dataNascimento={formValues.dataNascimento}
+              cpf={formValues.cpf}
+              rg={formValues.rg ?? ""}
+              estadoCivil={formValues.estadoCivil as EstadoCivil}
+              nomeConjuge={formValues.nomeConjuge ?? ""}
               idadeTxt={idadeTxt}
               isBusy={formDisabled}
               inputClass={inputClass}
               getFieldError={(field) => fieldErrors[field]}
               hasFieldError={(field) => !!fieldErrors[field]}
               maskCPF={maskCPF}
-              setNomeCompleto={setNomeCompleto}
-              setDataNascimento={setDataNascimento}
-              setCpf={setCpf}
-              setRg={setRg}
-              setEstadoCivil={setEstadoCivil}
-              setNomeConjuge={setNomeConjuge}
+              setNomeCompleto={setFormStringValue("nomeCompleto")}
+              setDataNascimento={setFormStringValue("dataNascimento")}
+              setCpf={setFormStringValue("cpf")}
+              setRg={setFormStringValue("rg")}
+              setEstadoCivil={setFormStringValue("estadoCivil") as any}
+              setNomeConjuge={setFormStringValue("nomeConjuge")}
             />
 
             <MembroContatoCard
-              telefoneCelular={telefoneCelular}
-              telefoneResidencial={telefoneResidencial}
-              email={email}
+              telefoneCelular={formValues.telefoneCelular}
+              telefoneResidencial={formValues.telefoneResidencial ?? ""}
+              email={formValues.email ?? ""}
               isBusy={formDisabled}
               inputClass={inputClass}
               getFieldError={(field) => fieldErrors[field]}
               hasFieldError={(field) => !!fieldErrors[field]}
               maskPhone={maskPhone}
-              setTelefoneCelular={setTelefoneCelular}
-              setTelefoneResidencial={setTelefoneResidencial}
-              setEmail={setEmail}
+              setTelefoneCelular={setFormStringValue("telefoneCelular")}
+              setTelefoneResidencial={setFormStringValue("telefoneResidencial")}
+              setEmail={setFormStringValue("email")}
               syncFormValue={(field, value) => {
                 if (field === "telefoneCelular") {
-                  setTelefoneCelular(value);
+                  form.setValue("telefoneCelular", value, {
+                    shouldValidate: true,
+                    shouldDirty: true,
+                  });
                 }
               }}
             />

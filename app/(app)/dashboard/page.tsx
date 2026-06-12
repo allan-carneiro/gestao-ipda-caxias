@@ -1216,31 +1216,31 @@ export default function DashboardPage() {
   }
 
   async function openCeiaAno() {
-    if (!userRole) return;
+  if (!userRole) return;
 
-    setModalKind("ceiaAno");
-    setModalOpen(true);
-    setSearch("");
-    setErroModal(null);
-    setCeiaMesRef(null);
+  setModalKind("ceiaAno");
+  setModalOpen(true);
+  setSearch("");
+  setErroModal(null);
+  setCeiaMesRef(null);
+  setParticipantesAno([]);
 
-    try {
-      setLoadingModal(true);
-      if (participantesAno.length === 0) {
-        const list = await listarParticipantesCeiaAno(anoAtual, userRole);
-        setParticipantesAno(list);
-      }
-    } catch (e: unknown) {
-      console.error(e);
-      const msg =
-        e && typeof e === "object" && "message" in e
-          ? String((e as any).message)
-          : "";
-      setErroModal(msg ? `Erro: ${msg}` : "Erro ao carregar lista.");
-    } finally {
-      setLoadingModal(false);
-    }
+  try {
+    setLoadingModal(true);
+
+    const list = await listarParticipantesCeiaAno(anoAtual, userRole);
+    setParticipantesAno(list);
+  } catch (e: unknown) {
+    console.error(e);
+    const msg =
+      e && typeof e === "object" && "message" in e
+        ? String((e as any).message)
+        : "";
+    setErroModal(msg ? `Erro: ${msg}` : "Erro ao carregar lista.");
+  } finally {
+    setLoadingModal(false);
   }
+}
 
   async function openCeiaRecorrentes() {
     if (!userRole) return;
