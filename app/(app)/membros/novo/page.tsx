@@ -130,28 +130,12 @@ export default function NovoMembroPage() {
     useMembroForm();
 
   const {
-    naturalidade,
-    setNaturalidade,
-    escolaridade,
-    setEscolaridade,
-    profissao,
-    setProfissao,
-    filhosQtd,
-    setFilhosQtd,
-    netosQtd,
-    setNetosQtd,
-
-    status,
-    setStatus,
-    observacoes,
-    setObservacoes,
-
-    fotoUrl,
-    setFotoUrl,
-    anexos,
-    uploadingFoto,
-    setUploadingFoto,
-  } = useMembroFormData();
+  fotoUrl,
+  setFotoUrl,
+  anexos,
+  uploadingFoto,
+  setUploadingFoto,
+} = useMembroFormData();
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
   const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
