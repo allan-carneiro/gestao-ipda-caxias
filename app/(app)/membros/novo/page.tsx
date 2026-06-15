@@ -281,16 +281,7 @@ export default function NovoMembroPage() {
     syncFormValue: syncCepFormValue,
   });
 
-  function syncLegacyFieldsToForm() {
-    form.setValue("naturalidade", naturalidade);
-    form.setValue("escolaridade", escolaridade);
-    form.setValue("profissao", profissao);
-    form.setValue("filhosQtd", filhosQtd);
-    form.setValue("netosQtd", netosQtd);
-
-    form.setValue("status", status);
-    form.setValue("observacoes", observacoes);
-  }
+  
 
   function handleInvalid(errors: any) {
     const nextErrors: FieldErrors = {};
@@ -499,10 +490,8 @@ export default function NovoMembroPage() {
   }
 
   function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
-    syncLegacyFieldsToForm();
-
-    void form.handleSubmit(salvar, handleInvalid)(e);
-  }
+  void form.handleSubmit(salvar, handleInvalid)(e);
+}
 
   return (
     <AuthGuard>
@@ -769,23 +758,23 @@ export default function NovoMembroPage() {
               </Row>
             </Card>
 
-            <MembroDadosPessoaisCard
-              naturalidade={naturalidade}
-              escolaridade={escolaridade}
-              profissao={profissao}
-              filhosQtd={filhosQtd}
-              netosQtd={netosQtd}
-              status={status}
-              statusError={fieldErrors.status}
-              isBusy={formDisabled}
-              inputClass={inputClass}
-              setNaturalidade={setNaturalidade}
-              setEscolaridade={setEscolaridade}
-              setProfissao={setProfissao}
-              setFilhosQtd={setFilhosQtd}
-              setNetosQtd={setNetosQtd}
-              setStatus={setStatus}
-            />
+           <MembroDadosPessoaisCard
+  naturalidade={formValues.naturalidade ?? ""}
+  escolaridade={formValues.escolaridade ?? ""}
+  profissao={formValues.profissao ?? ""}
+  filhosQtd={formValues.filhosQtd ?? ""}
+  netosQtd={formValues.netosQtd ?? ""}
+  status={formValues.status as Status}
+  statusError={fieldErrors.status}
+  isBusy={formDisabled}
+  inputClass={inputClass}
+  setNaturalidade={setFormStringValue("naturalidade")}
+  setEscolaridade={setFormStringValue("escolaridade")}
+  setProfissao={setFormStringValue("profissao")}
+  setFilhosQtd={setFormStringValue("filhosQtd")}
+  setNetosQtd={setFormStringValue("netosQtd")}
+  setStatus={setFormStringValue("status") as any}
+/>
 
             <MembroFotoCadastroCard
               fotoUrl={fotoUrl}
@@ -800,12 +789,12 @@ export default function NovoMembroPage() {
               }}
             />
 
-            <MembroObservacoesCard
-              value={observacoes}
-              disabled={formDisabled}
-              textareaClass={textareaClass}
-              onChange={setObservacoes}
-            />
+           <MembroObservacoesCard
+  value={formValues.observacoes ?? ""}
+  disabled={formDisabled}
+  textareaClass={textareaClass}
+  onChange={setFormStringValue("observacoes")}
+/>
 
             <div className="flex flex-col gap-3 md:flex-row">
               <button
