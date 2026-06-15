@@ -130,36 +130,6 @@ export default function NovoMembroPage() {
     useMembroForm();
 
   const {
-    logradouro,
-    setLogradouro,
-    numero,
-    setNumero,
-    complemento,
-    setComplemento,
-    lote,
-    setLote,
-    quadra,
-    setQuadra,
-    bairro,
-    setBairro,
-    cidade,
-    setCidade,
-    uf,
-    setUf,
-    cep,
-    setCep,
-
-    dataBatismo,
-    setDataBatismo,
-    campo,
-    setCampo,
-    congregacao,
-    setCongregacao,
-    pastor,
-    setPastor,
-    cargoEclesiastico,
-    setCargoEclesiastico,
-
     naturalidade,
     setNaturalidade,
     escolaridade,
@@ -292,14 +262,10 @@ export default function NovoMembroPage() {
     field: "logradouro" | "bairro" | "cidade" | "uf",
     value: string
   ) {
-    if (field === "logradouro") setLogradouro(value);
-    if (field === "bairro") setBairro(value);
-    if (field === "cidade") setCidade(value);
-    if (field === "uf") setUf(value);
-
     form.setValue(field, value, {
       shouldValidate: true,
       shouldDirty: true,
+      shouldTouch: true,
     });
   }
 
@@ -316,22 +282,6 @@ export default function NovoMembroPage() {
   });
 
   function syncLegacyFieldsToForm() {
-    form.setValue("logradouro", logradouro);
-    form.setValue("numero", numero);
-    form.setValue("complemento", complemento);
-    form.setValue("lote", lote);
-    form.setValue("quadra", quadra);
-    form.setValue("bairro", bairro);
-    form.setValue("cidade", cidade);
-    form.setValue("uf", uf);
-    form.setValue("cep", cep);
-
-    form.setValue("dataBatismo", dataBatismo);
-    form.setValue("campo", campo);
-    form.setValue("congregacao", congregacao);
-    form.setValue("pastor", pastor);
-    form.setValue("cargoEclesiastico", cargoEclesiastico);
-
     form.setValue("naturalidade", naturalidade);
     form.setValue("escolaridade", escolaridade);
     form.setValue("profissao", profissao);
@@ -692,28 +642,30 @@ export default function NovoMembroPage() {
             />
 
             <MembroEnderecoCard
-              logradouro={logradouro}
-              numero={numero}
-              complemento={complemento}
-              lote={lote}
-              quadra={quadra}
-              bairro={bairro}
-              cidade={cidade}
-              uf={uf}
-              cep={cep}
+              logradouro={formValues.logradouro}
+              numero={formValues.numero}
+              complemento={formValues.complemento ?? ""}
+              lote={formValues.lote ?? ""}
+              quadra={formValues.quadra ?? ""}
+              bairro={formValues.bairro}
+              cidade={formValues.cidade}
+              uf={formValues.uf}
+              cep={formValues.cep ?? ""}
               isBusy={formDisabled}
               isFetchingCep={isFetchingCep}
               inputClass={inputClass}
               getFieldError={(field) => fieldErrors[field]}
-              setLogradouro={setLogradouro}
-              setNumero={setNumero}
-              setBairro={setBairro}
-              setCidade={setCidade}
-              setUf={setUf}
-              setComplemento={setComplemento}
-              setLote={setLote}
-              setQuadra={setQuadra}
-              setCep={setCep}
+              syncFormValue={(field, value) => {
+                form.setValue(field as keyof NovoMembroFormData, value as any, {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                  shouldTouch: true,
+                });
+              }}
+              setComplemento={setFormStringValue("complemento")}
+              setLote={setFormStringValue("lote")}
+              setQuadra={setFormStringValue("quadra")}
+              setCep={setFormStringValue("cep")}
               buscarCepAuto={buscarCepAuto}
               maskCEP={maskCEP}
               onlyDigits={onlyDigits}
@@ -724,8 +676,14 @@ export default function NovoMembroPage() {
                 <Field label="Data de batismo">
                   <input
                     type="date"
-                    value={dataBatismo}
-                    onChange={(e) => setDataBatismo(e.target.value)}
+                    value={formValues.dataBatismo ?? ""}
+                    onChange={(e) =>
+                      form.setValue("dataBatismo", e.target.value, {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                        shouldTouch: true,
+                      })
+                    }
                     className={inputClass(false)}
                     disabled={formDisabled}
                   />
@@ -733,8 +691,14 @@ export default function NovoMembroPage() {
 
                 <Field label="Campo">
                   <select
-                    value={campo}
-                    onChange={(e) => setCampo(e.target.value)}
+                    value={formValues.campo}
+                    onChange={(e) =>
+                      form.setValue("campo", e.target.value, {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                        shouldTouch: true,
+                      })
+                    }
                     className={inputClass(false)}
                     disabled={formDisabled}
                   >
@@ -745,8 +709,14 @@ export default function NovoMembroPage() {
 
                 <Field label="Congregação">
                   <input
-                    value={congregacao}
-                    onChange={(e) => setCongregacao(e.target.value)}
+                    value={formValues.congregacao ?? ""}
+                    onChange={(e) =>
+                      form.setValue("congregacao", e.target.value, {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                        shouldTouch: true,
+                      })
+                    }
                     className={inputClass(false)}
                     disabled={formDisabled}
                   />
@@ -756,8 +726,14 @@ export default function NovoMembroPage() {
               <Row>
                 <Field label="Pastor">
                   <input
-                    value={pastor}
-                    onChange={(e) => setPastor(e.target.value)}
+                    value={formValues.pastor ?? ""}
+                    onChange={(e) =>
+                      form.setValue("pastor", e.target.value, {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                        shouldTouch: true,
+                      })
+                    }
                     className={inputClass(false)}
                     disabled={formDisabled}
                   />
@@ -768,8 +744,14 @@ export default function NovoMembroPage() {
                   error={fieldErrors.cargoEclesiastico}
                 >
                   <select
-                    value={cargoEclesiastico}
-                    onChange={(e) => setCargoEclesiastico(e.target.value)}
+                    value={formValues.cargoEclesiastico}
+                    onChange={(e) =>
+                      form.setValue("cargoEclesiastico", e.target.value, {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                        shouldTouch: true,
+                      })
+                    }
                     className={inputClass(!!fieldErrors.cargoEclesiastico)}
                     disabled={formDisabled}
                   >
