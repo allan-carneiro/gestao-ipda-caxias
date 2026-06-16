@@ -179,3 +179,52 @@ Os estados, propriedades e operações relacionadas aos anexos passaram a utiliz
 **Status**
 
 ✅ Concluído
+
+## 2026-06-15
+
+### Melhoria de Tipagem - Upload Cloudinary
+
+**Problema**
+
+O fluxo de upload de fotos e anexos utilizava conversões com `any` para acessar propriedades retornadas pela API do Cloudinary.
+
+Exemplos:
+
+```ts
+(result as any)?.secure_url
+(result as any)?.url
+```
+
+Essa abordagem reduzia a segurança de tipos fornecida pelo TypeScript e dificultava a manutenção do código.
+
+**Correção**
+
+Foi adotado o tipo `CloudinaryUploadResult` como retorno padrão da função de upload.
+
+O código passou a utilizar diretamente:
+
+```ts
+result.url
+```
+
+eliminando a necessidade de conversões para `any`.
+
+**Resultado**
+
+* Redução do uso de `any`.
+* Maior segurança de tipos.
+* Melhor suporte do TypeScript e IntelliSense.
+* Código mais simples e legível.
+* Menor risco de erros em tempo de execução.
+
+**Validação**
+
+* Build executado com sucesso.
+* Teste de upload de foto realizado.
+* Teste de upload de anexo realizado.
+* Teste de edição de membro realizado.
+* Deploy realizado com sucesso na Vercel.
+
+**Status**
+
+✅ Concluído

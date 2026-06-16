@@ -69,8 +69,8 @@ type FieldErrors = Record<string, string>;
 
 export default function EditarMembroPage() {
   const router = useRouter();
-  const params = useParams();
-  const id = String((params as any)?.id || "");
+  const params = useParams<{ id: string }>();
+const id = params.id;
 
   const toast = useToast();
 
