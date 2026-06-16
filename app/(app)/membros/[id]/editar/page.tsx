@@ -30,6 +30,7 @@ import type {
   EstadoCivil,
   Status,
   Membro,
+  MembroAnexo,
 } from "@/src/features/membros/types";
 
 import {
@@ -159,7 +160,7 @@ export default function EditarMembroPage() {
   const [observacoes, setObservacoes] = useState("");
 
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
-  const [anexos, setAnexos] = useState<any[]>([]);
+  const [anexos, setAnexos] = useState<MembroAnexo[]>([]);
 
   const isBusy =
     loading ||
@@ -315,7 +316,7 @@ export default function EditarMembroPage() {
         clearFormMessages();
 
         const arr = Array.from(files);
-        const novos: any[] = [];
+        const novos: MembroAnexo[] = [];
 
         for (const file of arr) {
           const result = await uploadImageToCloudinary(file);
@@ -761,7 +762,7 @@ export default function EditarMembroPage() {
   onUploadAnexos={handleUploadAnexos}
   onRemoveAnexo={(index) =>
     setAnexos((prev) =>
-      (prev || []).filter((_: any, idx: number) => idx !== index)
+      (prev || []).filter((_, idx: number) => idx !== index)
     )
   }
   onInvalidImage={() => {

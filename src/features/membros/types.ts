@@ -9,6 +9,11 @@ export type Status = "Ativo" | "Inativo";
 
 export type TelCarta = "" | "Tel." | "Carta";
 
+export type MembroAnexo = {
+  nome: string;
+  url: string;
+};
+
 export type Membro = {
   nomeCompleto?: string;
   dataNascimento?: string;
@@ -49,7 +54,7 @@ export type Membro = {
   observacoes?: string | null;
 
   fotoUrl?: string | null;
-  anexos?: any[];
+  anexos?: MembroAnexo[];
 
   numeroRol?: number | null;
   ipdaPastor?: string | null;
