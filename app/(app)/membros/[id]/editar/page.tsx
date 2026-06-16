@@ -293,14 +293,11 @@ export default function EditarMembroPage() {
         clearFormMessages();
 
         const result = await uploadImageToCloudinary(file);
-        const url =
-          typeof result === "string"
-            ? result
-            : (result as any)?.secure_url ?? (result as any)?.url ?? "";
+        const url = result.url;
 
         if (!url) throw new Error("Não foi possível obter a URL da foto.");
 
-        setFotoUrl(String(url).trim());
+        setFotoUrl(url.trim());
       },
       success: "Foto atualizada. Não esqueça de salvar.",
       errorFallback: "Erro ao enviar foto.",
@@ -320,14 +317,11 @@ export default function EditarMembroPage() {
 
         for (const file of arr) {
           const result = await uploadImageToCloudinary(file);
-          const url =
-            typeof result === "string"
-              ? result
-              : (result as any)?.secure_url ?? (result as any)?.url ?? "";
+          const url = result.url;
 
           if (!url) throw new Error("Não foi possível obter a URL do anexo.");
 
-          novos.push({ nome: file.name, url: String(url) });
+          novos.push({ nome: file.name, url });
         }
 
         setAnexos((prev) => [...(prev || []), ...novos]);

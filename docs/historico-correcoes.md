@@ -138,3 +138,44 @@ Remoção dos estados legados e simplificação do hook.
 **Status**
 
 ✅ Concluído
+
+## 2026-06-15
+
+### Refatoração de Tipagem - Remoção de any[] dos Anexos
+
+**Problema**
+
+O sistema utilizava `any[]` para armazenar anexos de membros, reduzindo a capacidade do TypeScript de validar a estrutura dos dados e detectar erros durante o desenvolvimento.
+
+**Correção**
+
+Foi criado o tipo `MembroAnexo` para representar explicitamente a estrutura dos anexos:
+
+```ts
+type MembroAnexo = {
+  nome: string;
+  url: string;
+};
+```
+
+Os estados, propriedades e operações relacionadas aos anexos passaram a utilizar tipagem forte.
+
+**Resultado**
+
+* Remoção de `any[]` dos anexos de membros.
+* Maior segurança de tipos.
+* Melhor suporte do TypeScript e IntelliSense.
+* Menor risco de erros em tempo de execução.
+* Código mais previsível e fácil de manter.
+
+**Validação**
+
+* Build executado com sucesso.
+* Teste de upload de anexo realizado.
+* Teste de remoção de anexo realizado.
+* Teste de edição e salvamento realizado.
+* Deploy realizado com sucesso na Vercel.
+
+**Status**
+
+✅ Concluído

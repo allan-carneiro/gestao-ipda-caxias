@@ -302,11 +302,7 @@ export default function NovoMembroPage() {
         clearMessages();
 
         const result = await uploadImageToCloudinary(file);
-
-        const url =
-          typeof result === "string"
-            ? result
-            : (result as any)?.secure_url ?? (result as any)?.url ?? "";
+        const url = result.url;
 
         if (!url) {
           throw new Error("Não foi possível obter a URL da foto após o upload.");
