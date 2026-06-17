@@ -281,3 +281,67 @@ const id = params.id;
 **Status**
 
 ✅ Concluído
+
+## 2026-06-15
+
+### Melhoria de Tipagem - Camada de Serviços Firestore
+
+**Problema**
+
+Os serviços responsáveis por criar e atualizar membros utilizavam conversões para `any` ao enviar dados para o Firestore.
+
+Exemplos:
+
+```ts
+payload as any
+```
+
+Essa abordagem reduzia a proteção oferecida pelo TypeScript e permitia que estruturas inválidas fossem enviadas sem validação adequada.
+
+**Correção**
+
+Foi removido o uso de `any` nos serviços:
+
+* `src/features/membros/services/createMembro.ts`
+* `src/features/membros/services/updateMembro.ts`
+
+Os objetos passaram a ser enviados diretamente utilizando os tipos já definidos pela aplicação.
+
+Antes:
+
+```ts
+await addDoc(collection(db, paths.membros), payload as any);
+```
+
+```ts
+await updateDoc(doc(db, paths.membros, id), payload as any);
+```
+
+Depois:
+
+```ts
+await addDoc(collection(db, paths.membros), payload);
+```
+
+```ts
+await updateDoc(doc(db, paths.membros, id), payload);
+```
+
+**Resultado**
+
+* Remoção de conversões desnecessárias para `any`.
+* Maior segurança de tipos na camada de persistência.
+* Melhor integração entre TypeScript e Firestore.
+* Redução de riscos de envio de dados incompatíveis.
+* Código mais limpo e mais fácil de manter.
+
+**Validação**
+
+* Build executado com sucesso.
+* Fluxo de cadastro de membros validado.
+* Fluxo de edição de membros validado.
+* Projeto compilado sem erros de TypeScript.
+
+**Status**
+
+✅ Concluído

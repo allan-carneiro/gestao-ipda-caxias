@@ -40,9 +40,9 @@ export async function createMembro({
   userRole,
 }: CreateMembroInput) {
   const ref = await addDoc(
-    collection(db, paths.membros),
-    payload as any
-  );
+  collection(db, paths.membros),
+  payload
+);
 
   await writeAuditLog({
     action: "create",

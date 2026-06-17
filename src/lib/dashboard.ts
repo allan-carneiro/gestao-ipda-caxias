@@ -28,7 +28,32 @@ export type CeiaFaltanteRecorrenteListItem = SimpleMembroListItem & {
   ceiaFaltasSeqLabel?: string;
 };
 
-function normalizeNome(v: any) {
+type DashboardMembroDoc = {
+  nomeCompleto?: unknown;
+  nome?: unknown;
+  dataNascimento?: unknown;
+  cpf?: unknown;
+  status?: unknown;
+  ceiaFaltanteRecorrente?: unknown;
+  faltasSeguidasCeia?: unknown;
+  ceiaObs?: unknown;
+  ceiaFaltasSeq?: unknown;
+  ceiaFaltasSeqLabel?: unknown;
+};
+
+type CeiaParticipacaoDoc = {
+  membroId?: unknown;
+  membroNome?: unknown;
+  nomeCompleto?: unknown;
+  nome?: unknown;
+  nomeMembro?: unknown;
+  dataNascimento?: unknown;
+  membroDataNascimento?: unknown;
+  cpf?: unknown;
+  presente?: unknown;
+};
+
+function normalizeNome(v: unknown) {
   const s = String(v ?? "").trim();
   return s || "Sem nome";
 }
@@ -37,7 +62,7 @@ function sortByNome(a: SimpleMembroListItem, b: SimpleMembroListItem) {
   return a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
 }
 
-async function getDocsPreferServer<T = any>(q: Query<T>, preferServer: boolean) {
+async function getDocsPreferServer(q: Query, preferServer: boolean) {
   if (!preferServer) return getDocs(q);
 
   try {
@@ -53,11 +78,18 @@ function chunk<T>(arr: T[], size: number) {
   return out;
 }
 
-function safeId(v: any): string | null {
+function safeId(v: unknown): string | null {
   const s = String(v ?? "").trim();
   if (!s) return null;
   if (s === "[object Object]" || s.includes("[object")) return null;
   return s;
+}
+
+function stringOrNull(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+
+  const s = v.trim();
+  return s ? s : null;
 }
 
 async function getMemberLiteMap(
@@ -81,7 +113,7 @@ async function getMemberLiteMap(
       const snap = await getDocs(q);
 
       snap.forEach((d) => {
-        const data = d.data() as any;
+        const data = d.data() as DashboardMembroDoc;
         const nome = normalizeNome(data?.nomeCompleto ?? data?.nome);
         const dataNascimento = (data?.dataNascimento ?? null) as string | null;
         const cpf = (data?.cpf ?? null) as string | null;
@@ -111,7 +143,7 @@ export async function getStatsMembros(role?: UserRole) {
   let semStatus = 0;
 
   snap.forEach((docSnap) => {
-    const data = docSnap.data() as any;
+    const data = docSnap.data() as DashboardMembroDoc;
     const s = data?.status;
 
     if (s === "Ativo") ativos++;
@@ -155,7 +187,7 @@ function toMonthIndex(mesKey: string): number | null {
   return ano * 12 + (mes - 1);
 }
 
-function normalizeCeiaSeq(raw: any): string[] | undefined {
+function normalizeCeiaSeq(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
 
   const clean = raw.map((x) => String(x ?? "").trim()).filter(Boolean);
@@ -187,7 +219,7 @@ export async function listarFaltantesRecorrentesCeia(
   const snap = await getDocs(qy);
 
   const items: CeiaFaltanteRecorrenteListItem[] = snap.docs.map((d) => {
-    const data = d.data() as any;
+    const data = d.data() as DashboardMembroDoc;
     const nome = normalizeNome(data?.nomeCompleto ?? data?.nome);
 
     const ceiaFaltasSeq = normalizeCeiaSeq(data?.ceiaFaltasSeq);
@@ -200,8 +232,8 @@ export async function listarFaltantesRecorrentesCeia(
     return {
       id: d.id,
       nome,
-      dataNascimento: data?.dataNascimento ?? null,
-      cpf: data?.cpf ?? null,
+      dataNascimento: stringOrNull(data?.dataNascimento),
+cpf: stringOrNull(data?.cpf),
       faltasSeguidasCeia: Number(data?.faltasSeguidasCeia ?? 0),
       ceiaObs: String(data?.ceiaObs ?? ""),
       ceiaFaltasSeq,
@@ -226,13 +258,13 @@ export async function listarMembrosPorStatus(
   const snap = await getDocs(q);
 
   const items: SimpleMembroListItem[] = snap.docs.map((d) => {
-    const data = d.data() as any;
+    const data = d.data() as DashboardMembroDoc;
     const nome = normalizeNome(data?.nomeCompleto ?? data?.nome);
     return {
       id: d.id,
       nome,
-      dataNascimento: data?.dataNascimento ?? null,
-      cpf: data?.cpf ?? null,
+      dataNascimento: stringOrNull(data?.dataNascimento),
+cpf: stringOrNull(data?.cpf),
     };
   });
 
@@ -243,13 +275,13 @@ export async function listarMembrosPorStatus(
 // ==========================
 // helpers: fallback para modais
 // ==========================
-function extractMembroIdFromControleDoc(docId: string, data: any): string | null {
+function extractMembroIdFromControleDoc(docId: string, data: CeiaParticipacaoDoc): string | null {
   const membroId = safeId(data?.membroId);
   const fallbackId = safeId(docId);
   return membroId || fallbackId || null;
 }
 
-function fallbackNomeFromCeiaDoc(data: any) {
+function fallbackNomeFromCeiaDoc(data: CeiaParticipacaoDoc) {
   return normalizeNome(
     data?.membroNome ??
       data?.nomeCompleto ??
@@ -259,7 +291,7 @@ function fallbackNomeFromCeiaDoc(data: any) {
   );
 }
 
-function fallbackNascimentoFromCeiaDoc(data: any): string | null {
+function fallbackNascimentoFromCeiaDoc(data: CeiaParticipacaoDoc): string | null {
   const v = data?.dataNascimento ?? data?.membroDataNascimento ?? null;
   const s = String(v ?? "").trim();
   return s ? s : null;
@@ -306,7 +338,7 @@ export async function listarPresentesCeiaMes(
   const fallbackById = new Map<string, SimpleMembroListItem>();
 
   for (const d of snap.docs) {
-    const data = d.data() as any;
+    const data = d.data() as CeiaParticipacaoDoc;
     const membroId = extractMembroIdFromControleDoc(d.id, data);
     if (!membroId) continue;
 
@@ -317,7 +349,7 @@ export async function listarPresentesCeiaMes(
         id: membroId,
         nome: fallbackNomeFromCeiaDoc(data),
         dataNascimento: fallbackNascimentoFromCeiaDoc(data),
-        cpf: data?.cpf ?? null,
+        cpf: stringOrNull(data?.cpf),
       });
     }
   }
@@ -365,7 +397,7 @@ export async function listarParticipantesCeiaAno(
   const snapAno = await getDocs(qy);
 
   for (const d of snapAno.docs) {
-    const data = d.data() as any;
+    const data = d.data() as CeiaParticipacaoDoc;
     const membroId = safeId(data?.membroId);
     if (!membroId) continue;
 
@@ -376,7 +408,7 @@ export async function listarParticipantesCeiaAno(
         id: membroId,
         nome: fallbackNomeFromCeiaDoc(data),
         dataNascimento: fallbackNascimentoFromCeiaDoc(data),
-        cpf: data?.cpf ?? null,
+        cpf: stringOrNull(data?.cpf),
       });
     }
   }
@@ -388,7 +420,7 @@ export async function listarParticipantesCeiaAno(
     const snapMes = await getDocs(qPres);
 
     for (const d of snapMes.docs) {
-      const data = d.data() as any;
+      const data = d.data() as CeiaParticipacaoDoc;
       const membroId = extractMembroIdFromControleDoc(d.id, data);
       if (!membroId) continue;
 
@@ -399,7 +431,7 @@ export async function listarParticipantesCeiaAno(
           id: membroId,
           nome: fallbackNomeFromCeiaDoc(data),
           dataNascimento: fallbackNascimentoFromCeiaDoc(data),
-          cpf: data?.cpf ?? null,
+          cpf: stringOrNull(data?.cpf),
         });
       }
     }

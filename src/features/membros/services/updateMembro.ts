@@ -29,7 +29,7 @@ export async function updateMembro({
   paths,
   audit,
 }: UpdateMembroInput) {
-  await updateDoc(doc(db, paths.membros, id), payload as any);
+  await updateDoc(doc(db, paths.membros, id), payload);
 
   if (audit) {
     await writeAuditLog({
