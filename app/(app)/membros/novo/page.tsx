@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type FieldErrors as ReactHookFormFieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import AuthGuard from "@/app/components/AuthGuard";
 import Link from "next/link";
@@ -130,12 +130,12 @@ export default function NovoMembroPage() {
     useMembroForm();
 
   const {
-  fotoUrl,
-  setFotoUrl,
-  anexos,
-  uploadingFoto,
-  setUploadingFoto,
-} = useMembroFormData();
+    fotoUrl,
+    setFotoUrl,
+    anexos,
+    uploadingFoto,
+    setUploadingFoto,
+  } = useMembroFormData();
 
   const paths = useMemo(() => getPaths(userRole ?? undefined), [userRole]);
   const demoMode = useMemo(() => isDemo(userRole ?? undefined), [userRole]);
@@ -175,23 +175,32 @@ export default function NovoMembroPage() {
     };
   }, []);
 
+  function setFormFieldValue(field: keyof NovoMembroFormData, value: string) {
+    form.setValue(field, value as NovoMembroFormData[typeof field], {
+      shouldValidate: true,
+      shouldDirty: true,
+      shouldTouch: true,
+    });
+  }
+
   function setFormStringValue(field: keyof NovoMembroFormData) {
-    return (value: any) => {
+    return (value: string | ((current: string) => string)) => {
       const currentValue = String(form.getValues(field) ?? "");
 
       const nextValue =
         typeof value === "function" ? value(currentValue) : value;
 
-      form.setValue(field, nextValue as any, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
+      setFormFieldValue(field, nextValue);
     };
   }
 
-  function toastErro(e: any, fallback: string) {
+  function toastErro(e: unknown, fallback: string) {
     const msg =
-      typeof e?.message === "string" && e.message.trim()
+      e &&
+      typeof e === "object" &&
+      "message" in e &&
+      typeof e.message === "string" &&
+      e.message.trim()
         ? e.message
         : typeof e === "string" && e.trim()
         ? e
@@ -222,7 +231,7 @@ export default function NovoMembroPage() {
       await opts.fn();
 
       if (opts.success) toastOk(opts.success);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
       toastErro(e, opts.errorFallback);
     } finally {
@@ -267,11 +276,11 @@ export default function NovoMembroPage() {
 
   
 
-  function handleInvalid(errors: any) {
+  function handleInvalid(errors: ReactHookFormFieldErrors<NovoMembroFormData>) {
     const nextErrors: FieldErrors = {};
 
-    Object.entries(errors).forEach(([field, error]: any) => {
-      if (error?.message) {
+    Object.entries(errors).forEach(([field, error]) => {
+      if (typeof error?.message === "string") {
         nextErrors[field] = error.message;
       }
     });
@@ -426,11 +435,27 @@ export default function NovoMembroPage() {
 
         const c = vr.value;
 
+        const statusValidado: Status = isStatusValido(c.status)
+          ? c.status
+          : statusSeguro;
+
+        const telCartaValidado: Membro["telCarta"] =
+          c.telCarta === "Tel." || c.telCarta === "Carta"
+            ? c.telCarta
+            : payload.telCarta === "Tel." || payload.telCarta === "Carta"
+            ? payload.telCarta
+            : null;
+
+        const fotoUrlValidada: Membro["fotoUrl"] =
+          typeof c.fotoUrl === "string" || c.fotoUrl === null
+            ? c.fotoUrl
+            : payload.fotoUrl;
+
         const payloadSeguro: Membro = {
           ...payload,
 
           nomeCompleto: c.nomeCompleto ?? payload.nomeCompleto,
-          status: (c.status as any) ?? payload.status,
+          status: statusValidado,
 
           telefoneCelular: c.telefoneCelular ?? payload.telefoneCelular,
           email: c.email ?? payload.email,
@@ -449,8 +474,8 @@ export default function NovoMembroPage() {
 
           numeroRol: c.numeroRol ?? payload.numeroRol,
 
-          telCarta: (c.telCarta as any) ?? payload.telCarta,
-          fotoUrl: (c.fotoUrl as any) ?? payload.fotoUrl,
+          telCarta: telCartaValidado,
+          fotoUrl: fotoUrlValidada,
         };
 
         const result = await createMembro({
@@ -470,8 +495,8 @@ export default function NovoMembroPage() {
   }
 
   function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
-  void form.handleSubmit(salvar, handleInvalid)(e);
-}
+    void form.handleSubmit(salvar, handleInvalid)(e);
+  }
 
   return (
     <AuthGuard>
@@ -584,7 +609,7 @@ export default function NovoMembroPage() {
               setDataNascimento={setFormStringValue("dataNascimento")}
               setCpf={setFormStringValue("cpf")}
               setRg={setFormStringValue("rg")}
-              setEstadoCivil={setFormStringValue("estadoCivil") as any}
+              setEstadoCivil={setFormStringValue("estadoCivil")}
               setNomeConjuge={setFormStringValue("nomeConjuge")}
             />
 
@@ -625,11 +650,7 @@ export default function NovoMembroPage() {
               inputClass={inputClass}
               getFieldError={(field) => fieldErrors[field]}
               syncFormValue={(field, value) => {
-                form.setValue(field as keyof NovoMembroFormData, value as any, {
-                  shouldValidate: true,
-                  shouldDirty: true,
-                  shouldTouch: true,
-                });
+                setFormFieldValue(field as keyof NovoMembroFormData, value);
               }}
               setComplemento={setFormStringValue("complemento")}
               setLote={setFormStringValue("lote")}
@@ -753,7 +774,7 @@ export default function NovoMembroPage() {
   setProfissao={setFormStringValue("profissao")}
   setFilhosQtd={setFormStringValue("filhosQtd")}
   setNetosQtd={setFormStringValue("netosQtd")}
-  setStatus={setFormStringValue("status") as any}
+  setStatus={setFormStringValue("status")}
 />
 
             <MembroFotoCadastroCard
