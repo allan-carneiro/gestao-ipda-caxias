@@ -538,30 +538,39 @@ const id = params.id;
 
         const c = vr.value;
 
-        const payloadSeguro: Partial<Membro> = {
-          ...payload,
+        const statusValidado = isStatusValido(c.status)
+  ? c.status
+  : payload.status;
 
-          nomeCompleto: c.nomeCompleto ?? payload.nomeCompleto,
-          status: (c.status as any) ?? payload.status,
+const fotoUrlValidada =
+  typeof c.fotoUrl === "string" || c.fotoUrl === null
+    ? c.fotoUrl
+    : payload.fotoUrl;
 
-          telefoneCelular: c.telefoneCelular ?? payload.telefoneCelular,
-          email: c.email ?? payload.email,
+const payloadSeguro: Partial<Membro> = {
+  ...payload,
 
-          cpf: c.cpf ?? payload.cpf,
-          rg: c.rg ?? payload.rg,
+  nomeCompleto: c.nomeCompleto ?? payload.nomeCompleto,
+  status: statusValidado,
 
-          dataNascimento: c.dataNascimento ?? payload.dataNascimento,
-          dataBatismo: c.dataBatismo ?? payload.dataBatismo,
+  telefoneCelular: c.telefoneCelular ?? payload.telefoneCelular,
+  email: c.email ?? payload.email,
 
-          congregacao: c.congregacao ?? payload.congregacao,
-          pastor: c.pastor ?? payload.pastor,
-          campo: c.campo ?? payload.campo,
+  cpf: c.cpf ?? payload.cpf,
+  rg: c.rg ?? payload.rg,
 
-          cargoEclesiastico:
-            c.cargoEclesiastico ?? payload.cargoEclesiastico,
+  dataNascimento: c.dataNascimento ?? payload.dataNascimento,
+  dataBatismo: c.dataBatismo ?? payload.dataBatismo,
 
-          fotoUrl: (c.fotoUrl as any) ?? payload.fotoUrl,
-        };
+  congregacao: c.congregacao ?? payload.congregacao,
+  pastor: c.pastor ?? payload.pastor,
+  campo: c.campo ?? payload.campo,
+
+  cargoEclesiastico:
+    c.cargoEclesiastico ?? payload.cargoEclesiastico,
+
+  fotoUrl: fotoUrlValidada,
+};
 
         await updateMembro({
           id,

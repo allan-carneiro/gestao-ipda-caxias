@@ -228,3 +228,56 @@ eliminando a necessidade de conversões para `any`.
 **Status**
 
 ✅ Concluído
+
+## 2026-06-15
+
+### Melhoria de Tipagem - Rotas Next.js
+
+**Problema**
+
+A página de edição de membros utilizava conversão para `any` ao acessar parâmetros da rota do Next.js.
+
+Exemplo:
+
+```ts
+const id = String((params as any)?.id || "");
+```
+
+Essa abordagem reduzia a segurança de tipos e impedia o TypeScript de validar corretamente a estrutura dos parâmetros recebidos pela rota.
+
+**Correção**
+
+Foi adotada tipagem explícita para o hook `useParams`.
+
+Antes:
+
+```ts
+const params = useParams();
+const id = String((params as any)?.id || "");
+```
+
+Depois:
+
+```ts
+const params = useParams<{ id: string }>();
+const id = params.id;
+```
+
+**Resultado**
+
+* Remoção de uso desnecessário de `any`.
+* Melhor integração com o sistema de tipos do TypeScript.
+* Maior segurança na leitura de parâmetros de rota.
+* Melhor suporte de IntelliSense.
+* Código mais simples e legível.
+
+**Validação**
+
+* Build executado com sucesso.
+* Teste de abertura da página de edição realizado.
+* Teste de salvamento de membro realizado.
+* Deploy realizado com sucesso.
+
+**Status**
+
+✅ Concluído
